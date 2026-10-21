@@ -21,7 +21,11 @@
       "!node_modules",
       "!dist",
       "!bin",
-      "!.vale"
+      "!.vale",
+      "!.devtools",
+      "!.config/mise/locks",
+      "!.claude",
+      "!apm_modules"
     ]
   },
   "formatter": {

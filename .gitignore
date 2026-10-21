@@ -5,10 +5,13 @@ tmp/
 !.env.example
 mise.local.toml
 
-# Agent commit-message draft. Authored at the repo root so vale's
-# [formats] mapping resolves it, linted via `just lint-commit-msg`,
-# then consumed with `git commit -F COMMIT_AGENTMSG`. Never committed.
+# Agent drafts. Authored at the repo root so vale's [formats] mapping
+# resolves them, linted via `mise run lint-commit-msg` and its siblings,
+# then consumed by the commit and pull request skills. Never committed.
 COMMIT_AGENTMSG
+PR_AGENTDESC.md
+SQUASH_AGENTMSG
+.fix-prose/
 
 # Go build output
 bin/
@@ -26,6 +29,7 @@ testdata/fuzz/
 .rumdl_cache/
 node_modules/
 .cspell-cache
+__pycache__/
 
 # goreleaser
 dist/
@@ -42,11 +46,12 @@ gremlins-report.json
 # Each negation needs the parent un-ignored first — git can't re-include
 # a child whose ancestor directory stays excluded.
 .vale/*
+!.vale/project/
 !.vale/config/
 .vale/config/*
 !.vale/config/vocabularies/
 .vale/config/vocabularies/*
-!.vale/config/vocabularies/gomodscan/
+!.vale/config/vocabularies/project/
 
 # macOS
 .DS_Store

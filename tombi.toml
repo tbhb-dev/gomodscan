@@ -1,9 +1,9 @@
 #:schema tombi://www.schemastore.org/tombi.json
-# proofhouse org-standard tombi config (tombi 1.2.0) — propagated verbatim to every repo.
-# Gate commands are invoked only via `just lint-toml` / `just format-toml`, never raw:
+# Standard tombi config adapted from tbhb-dev/devtools v0.14.0.
+# Gate commands are invoked only via `mise run devtools:lint-toml` / `mise run devtools:format-toml`, never raw:
 #   tombi format --check --diff             (non-mutating format gate)
 #   tombi lint --offline --error-on-warnings
-# Re-verify the tombi pin at execution time (runbook caveat).
+# Re-verify the tombi pin whenever the version literals move.
 
 toml-version = "v1.0.0"
 
@@ -15,15 +15,18 @@ toml-version = "v1.0.0"
 # undocumented ignore is a review defect, per org convention).
 exclude = [
   "vendor/**/*.toml",
+  ".devtools/**/*.toml",
+  ".config/mise/**/*.toml",
+  "mise.local.toml",
   ".venv/**/*.toml",
   "target/**/*.toml",
   "tmp/**/*.toml",
   ".claude/**/*.toml",
   "apm_modules/**/*.toml",
   "node_modules/**/*.toml",
-  # Generated lockfiles excluded from the format gate (runbook: "Exclude Cargo.lock
-  # from formatting"). They end in .lock not .toml, so the default include already
-  # skips them; listed here to make the runbook decision explicit and durable.
+  # Generated lockfiles excluded from the format gate. They end in .lock not .toml,
+  # so the default include already skips them; listed here to make the decision
+  # explicit and durable.
   "Cargo.lock",
   "uv.lock",
 ]

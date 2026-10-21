@@ -1,0 +1,9 @@
+# Shared fix tasks. Same task-file syntax, namespace, selection, and
+# pin rules as format.toml in this directory.
+
+# Complement to devtools:format-markdown, which only rewrites
+# whitespace and ordering, not semantic lints.
+["devtools:fix-markdown"]
+description = "Apply rumdl's auto-fixable Markdown rules"
+usage = 'arg "<paths>..." default="."'
+run = "rumdl check --fix $usage_paths"

@@ -1,0 +1,160 @@
+# Shared lint tasks. Same task-file syntax, namespace, selection, and
+# pin rules as format.toml in this directory. Only gates whose bodies
+# are identical between the consuming repos live here; a gate whose
+# scope or idiom is repo-specific (lint-prose's glob via DEVTOOLS_PROSE_GLOB,
+# lint-editorconfig's file listing) stays in the consumer's root
+# mise.toml.
+
+# tombi lint-checks every tracked *.toml, validated offline against
+# embedded SchemaStore schemas where one exists. The format gate runs in
+# --check --diff mode as well, so an unformatted TOML file fails the bar
+# without being rewritten (devtools:format-toml is the in-place fixer).
+# --offline keeps the check hermetic against SchemaStore;
+# --error-on-warnings promotes warnings to hard failures. Scope lives in
+# the consumer's tombi.toml, so this task passes no path args.
+["devtools:lint-toml"]
+description = "Lint and format-check TOML via tombi"
+run = [
+  "tombi format --check --diff",
+  "tombi lint --offline --error-on-warnings",
+]
+
+["devtools:lint-markdown"]
+description = "Lint Markdown structure against .rumdl.toml"
+usage = 'arg "<paths>..." default="."'
+run = "rumdl check $usage_paths"
+
+["devtools:lint-config"]
+description = "Lint JSON / JS / TS via biome"
+usage = 'arg "<paths>..." default="."'
+run = "biome check --files-ignore-unknown=true $usage_paths"
+
+# Both flags beyond --strict exist to hold ryl to yamllint's behavior,
+# and dropping either changes what the gate reports.
+#
+# -c pins the config. Left to discover one, ryl resolves a config per
+# directory the way ruff and biome do, so a nested .yamllint.yaml
+# anywhere in the tree governs its own subtree -- this repository vendors
+# one under vendor/github.com/spf13/viper/, and it produced six findings
+# in a tree yamllint calls clean. yamllint has no such notion: one config
+# covers the whole run. Naming the file restores that.
+#
+# -f auto -o - sends findings to stdout. ryl writes the console formats
+# to stderr by default where yamllint uses stdout, which would break any
+# caller that redirects or pipes this task's output. -o - binds to the
+# preceding --format and is rejected without one, so the otherwise
+# redundant `-f auto` names the default explicitly: colored on a
+# terminal, plain when piped, which is what yamllint's own default does.
+#
+# ryl resolves ignore-from-file entries relative to the config file
+# rather than the working directory. Both land on the repository root
+# here, since the config sits there and mise runs tasks from the project
+# root, so .gitignore and .yamllintignore resolve identically.
+#
+# The `check` subcommand is the explicit form of bare `ryl <paths>`,
+# which ryl 0.24.0 deprecates with a warning on every run.
+["devtools:lint-yaml"]
+description = "Lint YAML via ryl (--strict; config in .yamllint.yaml)"
+usage = 'arg "<paths>..." default="."'
+run = "ryl check --strict -c .yamllint.yaml -f auto -o - $usage_paths"
+
+# The COMMIT_AGENTMSG exclusions keep a work-in-progress commit-message
+# draft out of the tree-wide check; the commit-msg stage owns those under
+# the stricter commit scope.
+["devtools:lint-spelling"]
+description = "Check spelling against the project dictionary (.cspell-words.txt)"
+usage = 'arg "<paths>..." default="."'
+run = "cspell --config .cspell.jsonc --no-summary --no-progress --no-must-find-files --exclude COMMIT_AGENTMSG --exclude PR_AGENTDESC.md --exclude SQUASH_AGENTMSG $usage_paths"
+
+# Skip repositories without workflow YAML files.
+# actionlint walks `.github/workflows/` by default, parses each
+# workflow, and flags unknown actions, mis-typed expressions, shellcheck
+# issues inside `run:` blocks, and SHA-pin drift. Complements the
+# ryl gate (which checks YAML structure) with workflow-shape rules a
+# YAML linter can't see. shellcheck is pinned in the baseline drop-in
+# beside actionlint because actionlint shells out to whatever
+# `shellcheck` binary it finds: the container image this task replaces
+# bundled one, and without that pin the `run:`-block checks would
+# silently vanish on a machine with no shellcheck rather than fail.
+["devtools:lint-workflows"]
+description = "Lint GitHub Actions workflow files via actionlint"
+run = """
+#!/usr/bin/env bash
+for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+  if [[ -f "$workflow" ]]; then
+    SHELLCHECK_OPTS="${SHELLCHECK_OPTS:-} -o check-extra-masked-returns" exec actionlint
+  fi
+done
+echo "No workflow files found; skipping actionlint."
+"""
+
+# Format-check the mise configuration with mise's own formatter, so the
+# files that define the toolchain and most of the gates are themselves
+# gated. It does not overlap with lint-toml: mise fmt is the stricter of
+# the two (it insists on exploded arrays above a width threshold where
+# tombi accepts either), and a file mise fmt has normalized passes tombi
+# unchanged. `mise fmt` with no flag is the in-place fixer. Its scope is
+# the config files mise discovers -- mise.toml and the conf.d drop-ins.
+# It does not read included task files like this one; tombi is the
+# format gate for those.
+["devtools:lint-mise"]
+description = "Format-check the mise config with mise's own formatter"
+run = "mise fmt --check"
+
+# Keep file selection in one task so shell and Markdown gates share defaults.
+# DEVTOOLS_GENERATED_PATHS adds newline-separated repository-relative path patterns.
+["devtools:lint-source-files"]
+hide = true
+description = "Select owned source files for shell, Markdown, and prose gates"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+mode=$1
+shift
+excludes=(':(exclude)vendor/**' ':(exclude)apm_modules/**')
+while IFS= read -r path; do
+  if [[ -n "$path" ]]; then
+    path=${path%/}
+    excludes+=(":(exclude)$path" ":(exclude)$path/**")
+  fi
+done <<< "${DEVTOOLS_GENERATED_PATHS:-}"
+case "$mode" in
+  shell) pattern='*.sh'; command=(shellcheck -o check-extra-masked-returns) ;;
+  curl) pattern='*.sh'; command=(uv run --script "$DEVTOOLS_DIR/scripts/check_curl_fail.py") ;;
+  shell-fmt) pattern='*.sh'; command=(shfmt -d) ;;
+  prose) pattern='*'; command=(vale --output=ai-tells-agent.tmpl --glob="${DEVTOOLS_PROSE_GLOB:-*}") ;;
+  markdown-wrap) pattern='*.md'; command=(guard-markdown) ;;
+esac
+selected=$(mktemp)
+trap 'rm -f "$selected"' EXIT
+patterns=("$pattern")
+if [[ "$mode" == prose && $# -gt 0 ]]; then
+  patterns=("$@")
+  shift "$#"
+fi
+git ls-files -z --cached --others --exclude-standard -- "${patterns[@]}" "${excludes[@]}" >"$selected"
+uv run --script "$DEVTOOLS_DIR/scripts/filter-apm-deployed.py" "$selected"
+files=()
+while IFS= read -r -d '' file; do
+  files+=("$file")
+done <"$selected"
+if [[ -n ${files[0]+set} ]]; then
+  "${command[@]}" "$@" "${files[@]}"
+fi
+'''
+
+["devtools:lint-shell"]
+description = "Lint owned shell scripts via shellcheck"
+run = "mise run devtools:lint-source-files -- shell"
+
+["devtools:lint-shell-fmt"]
+description = "Check owned shell script formatting via shfmt"
+run = "mise run devtools:lint-source-files -- shell-fmt"
+
+["devtools:lint-markdown-wrap"]
+description = "Check owned Markdown paragraphs via guard-markdown"
+run = "mise run devtools:lint-source-files -- markdown-wrap"
+
+["devtools:lint-curl"]
+description = "Require curl to fail on HTTP errors in owned shell scripts"
+run = "mise run devtools:lint-source-files -- curl"

@@ -63,7 +63,7 @@ func NewRun(toolName string) *sarif.Run {
 // GitHub Code Scanning rejects any result without a physical
 // location, so [AddResult] turns this into one. URI holds a
 // repo-root-relative path such as vendor/modules.txt, and Line gives
-// the 1-based line the finding sits on.
+// the 1-based line of the finding.
 type Location struct {
 	URI  string
 	Line int

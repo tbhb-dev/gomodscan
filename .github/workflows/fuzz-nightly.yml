@@ -1,11 +1,11 @@
 ---
 # Nightly fuzzing sweep. Walks every native Go fuzz target in the module
-# and runs each one for a longer budget than the inner-loop `just fuzz`
+# and runs each one for a longer budget than the inner-loop `fuzz-go`
 # default, so corpus growth and crasher discovery happen off the critical
-# path rather than on every PR. The workflow invokes the same `just fuzz`
-# recipe contributors run locally, overriding only FUZZ_TIME, so the recipe
+# path rather than on every PR. The workflow invokes the same `fuzz-go`
+# task contributors run locally, overriding only FUZZ_TIME, so the task
 # stays the single source of truth for what gets fuzzed. Mirrors the
-# gremlins / mutate-all split where one recipe powers both the inner loop
+# gremlins / mutate-go-all split where one task powers both the inner loop
 # and the scheduled sweep.
 #
 # A crash writes its reproducing input under the package's
@@ -29,6 +29,10 @@ on:
 permissions:
   contents: read
 
+# Refuse a pin the committed lockfiles have not seen; see ci.yml.
+env:
+  MISE_LOCKED: "1"
+
 concurrency:
   # Serialize scheduled and manual runs so an on-demand dispatch never races
   # a nightly run over the same corpus. Never cancel a run in flight: a
@@ -45,7 +49,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -54,24 +58,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          go-version-file: go.mod
-          check-latest: false
-
-      - name: Set up just
-        uses: proofhouse/github-actions/.github/actions/setup-just@131c527df05799916f98d8c4b26eb225dbfc7845 # v0.4.0
+          # renovate: datasource=github-releases depName=jdx/mise
+          version: 2026.10.9
+          install_args: go
 
       - name: Run fuzz sweep
         env:
           # Scheduled runs carry no inputs, so fall back to the dispatch default.
           FUZZ_TIME: ${{ github.event.inputs.fuzz_time || '5m' }}
-        run: just fuzz
+        run: mise run fuzz-go
 
       - name: Upload crashers
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-crashers
           path: "**/testdata/fuzz/**"

@@ -1,9 +1,20 @@
 {
   "language": "en",
+  "useGitignore": true,
   "ignorePaths": [
     "**/*.d.ts",
     "**/*.log",
+    "apm_modules/**/*",
+    // Agent primitives deployed from tbhb-dev/devtools and pinned by
+    // content hash in apm.lock.yaml. Their vocabulary is upstream's.
+    ".agents/skills/**/*",
+    ".agents/rules/**/*",
+    ".claude/rules/**/*",
+    ".claude/skills/**/*",
     ".claude/worktrees/**/*",
+    // The vendored devtools payload answers to the publisher's dictionary.
+    ".config/mise/**/*",
+    ".devtools/**/*",
     ".rumdl_cache/**/*",
     ".vale/**/*",
     "coverage.json",
@@ -11,6 +22,11 @@
     "dist/**/*",
     "go.mod",
     "go.sum",
+    "apm.lock.yaml",
+    "mise.lock",
+    "vendir.lock.yml",
+    // Private values, gitignored; nothing in it belongs in a dictionary.
+    "mise.local.toml",
     "LICENSE",
     "node_modules/**/*",
     "tmp/**/*",

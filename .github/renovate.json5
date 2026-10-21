@@ -1,35 +1,26 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
 
-  // The repository-level org policy comes from two shared presets in
-  // proofhouse/github-actions, both pulled in via extends:
+  // The repository-level policy comes from two shared devtools presets:
+  // renovate-config.json5 has the rules, grouping, and the custom managers
+  // for pin sites no built-in manager reads, and renovate-go-config.json5
+  // has the Go-module specifics (gomodTidy and the go-deps grouping). Both
+  // are pinned to the same commit. devtools:check-pins reads the trailing
+  // version comment on each line, and devtools:update-pins moves both
+  // together with the other pin sites.
   //
-  //   - renovate-config.json5 — the general repo-level rules plus the
-  //     Justfile and Vale custom managers shared by every repo.
-  //   - renovate-go-config.json5 — the Go-module policy shared by every Go
-  //     repo: gomodTidy as a postUpdateOption and the go-deps grouping for
-  //     the gomod manager. Both were inline here until the same pair had
-  //     been copy-pasted across all three Go repos.
-  //
-  // extends resolves after platform initialization, with token auth.
-  extends: [
-    "github>proofhouse/github-actions//.github/renovate-config.json5",
-    "github>proofhouse/github-actions//.github/renovate-go-config.json5",
-  ],
-
-  // Global-only identity, rate limits, and requireConfig. These previously
-  // came from renovate-global-config.json5 via globalExtends, but Renovate
-  // resolves globalExtends before host rules are registered, so that preset
-  // fetch was always anonymous and intermittently hit GitHub's per-IP rate
-  // limit (config-presets-invalid). Inlining the resolved values removes
-  // the pre-auth fetch entirely.
+  // The global-only options (identity, limits, requireConfig) are inlined
+  // here rather than taken from globalExtends, which Renovate resolves
+  // before host rules exist, so that fetch would run unauthenticated.
   requireConfig: "ignored",
-  username: "proofhouse-renovate[bot]",
-  gitAuthor: "proofhouse-renovate[bot] <289255489+proofhouse-renovate[bot]@users.noreply.github.com>",
+  username: "tbhb-dev-renovate[bot]",
+  gitAuthor: "tbhb-dev-renovate[bot] <289255489+tbhb-dev-renovate[bot]@users.noreply.github.com>",
   prConcurrentLimit: 0,
   prHourlyLimit: 0,
+  extends: [
+    "github>tbhb-dev/devtools//.github/renovate-config.json5#830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9", // v0.14.0
+    "github>tbhb-dev/devtools//.github/renovate-go-config.json5#830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9", // v0.14.0
+  ],
 
-  // Single-repo scope, and the only genuinely local setting left here. It
-  // is global-only and differs per repo, so it fits in neither preset.
-  repositories: ["proofhouse/gomodscan"],
+  repositories: ["tbhb-dev/gomodscan"],
 }

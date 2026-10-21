@@ -3,10 +3,10 @@
 # reports which mutants the test suite kills versus which survive, so
 # mutation analysis happens off the critical path rather than on every
 # PR. Gremlins reruns the entire suite per mutant, far too slow to gate
-# a pull request. The workflow invokes the same `just mutate-all` recipe
+# a pull request. The workflow invokes the same `mutate-go-all` task
 # contributors run locally, overriding only the timeout coefficient, so
-# the recipe stays the single source of truth for what gets mutated.
-# Mirrors the fuzz / fuzz-nightly split where one recipe powers both the
+# the task stays the single source of truth for what gets mutated.
+# Mirrors the fuzz / fuzz-nightly split where one task powers both the
 # inner loop and the scheduled sweep.
 #
 # Gremlins exits zero whatever the score (the recipe sets no threshold),
@@ -32,6 +32,10 @@ on:
 permissions:
   contents: read
 
+# Refuse a pin the committed lockfiles have not seen; see ci.yml.
+env:
+  MISE_LOCKED: "1"
+
 concurrency:
   # Serialize scheduled and manual runs so an on-demand dispatch never
   # races a nightly run. Never cancel a run in flight: a half-finished
@@ -50,7 +54,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -59,17 +63,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          go-version-file: go.mod
-          check-latest: false
-
-      - name: Set up just
-        uses: proofhouse/github-actions/.github/actions/setup-just@131c527df05799916f98d8c4b26eb225dbfc7845 # v0.4.0
+          # renovate: datasource=github-releases depName=jdx/mise
+          version: 2026.10.9
+          install_args: go
 
       - name: Run mutation sweep
         env:
           # Scheduled runs carry no inputs, so fall back to the dispatch default.
           GREMLINS_TIMEOUT_COEFFICIENT: ${{ github.event.inputs.timeout_coefficient || '100' }}
-        run: just mutate-all
+        run: mise run mutate-go-all

@@ -291,4 +291,8 @@ tombi
 venv
 koalaman
 pathspec
-linuxbrew
+agentrepo
+AGENTDESC
+preapproval
+vendir
+tera

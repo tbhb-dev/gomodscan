@@ -1,21 +1,28 @@
 ---
-# Supply-chain security scanners that report to GitHub Code Scanning.
-# Two jobs run the project's dependency scanners with SARIF output and
-# upload each result under its own category: govulncheck over the call
-# graph, and gomodscan over the vendored module set (retraction,
-# deprecation, and OSV malicious-package checks).
+# Supply-chain and secret scanners. Three jobs: gitleaks walks the full
+# commit history and the working tree against its bundled rule set, so a
+# credential committed anywhere in the repo's past fails the gate;
+# govulncheck and gomodscan run with SARIF output and upload each result
+# to GitHub Code Scanning under its own category (govulncheck over the
+# call graph, gomodscan over the vendored module set: retraction,
+# deprecation, and OSV malicious-package checks). The blocking
+# reachable-vulnerability scan is the `vuln` job in ci.yml.
 #
 # Triggers cover pull requests and pushes to `main` — the pushes seed
 # the Code Scanning baseline that pull-request diffs compare against —
-# plus a daily cron that catches advisories published against
-# already-merged dependencies long after the pull request that added
-# them. Findings surface in the Security tab through SARIF rather than
-# failing the run, so a warning-level deprecation does not gate a pull
-# request. The blocking govulncheck gate stays in `ci.yml`.
+# plus a daily cron that catches rules added to gitleaks, and advisories
+# published against already-merged dependencies, after the pull request
+# that added them. The SARIF jobs surface findings in the Security tab
+# rather than failing the run, so a warning-level deprecation does not
+# gate a pull request. The blocking gates are gitleaks here and `vuln`
+# in `ci.yml`.
 #
-# Each job installs `just` from the SHA-pinned setup-just composite and
-# invokes the matching `just *-sarif` recipe, so the scan command stays
-# the single source of truth shared with local runs.
+# govulncheck delegates to the shared reusable workflow in
+# tbhb-dev/devtools, which also retains the raw SARIF and uploads only
+# the reachable findings. gomodscan scans itself from source through the
+# local `scan-sarif` task, so the scan exercises the code under review
+# rather than a released binary. Pinned by commit SHA; the trailing tag
+# comment marks the matching release for Renovate.
 
 name: security
 
@@ -29,45 +36,58 @@ on:
 permissions:
   contents: read
 
+# See ci.yml: without this a pin can move without its lockfile entry.
+env:
+  MISE_LOCKED: "1"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  govulncheck:
-    name: govulncheck
+  gitleaks:
+    name: gitleaks
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      security-events: write
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history so gitleaks scans every commit's diff, not just
+          # the checkout tip.
+          fetch-depth: 0
+          # The task scans the history reachable from HEAD. On a pull
+          # request GitHub checks out a synthetic merge commit by default,
+          # which has a signature and an author line no contributor
+          # wrote. Checking out the pull request head ends the scan range
+          # at the commits the author pushed. A push or a scheduled run
+          # has no pull request, so it falls back to the commit that
+          # triggered the run.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          go-version-file: go.mod
-          check-latest: false
+          # renovate: datasource=github-releases depName=jdx/mise
+          version: 2026.10.9
+          install_args: gitleaks
 
-      - name: Set up just
-        uses: proofhouse/github-actions/.github/actions/setup-just@131c527df05799916f98d8c4b26eb225dbfc7845 # v0.4.0
+      - name: Scan for committed secrets
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "0"
+        run: mise run devtools:gitleaks
 
-      - name: Run govulncheck (SARIF)
-        run: just vuln-sarif govulncheck.sarif
-
-      - name: Upload govulncheck SARIF
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
-        with:
-          sarif_file: govulncheck.sarif
-          category: govulncheck
+  govulncheck:
+    permissions:
+      contents: read
+      security-events: write
+    # yamllint disable-line rule:line-length
+    uses: tbhb-dev/devtools/.github/workflows/scan-govulncheck.yml@830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9 # v0.14.0
 
   gomodscan:
     name: gomodscan
@@ -77,7 +97,7 @@ jobs:
       security-events: write
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -86,20 +106,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          go-version-file: go.mod
-          check-latest: false
-
-      - name: Set up just
-        uses: proofhouse/github-actions/.github/actions/setup-just@131c527df05799916f98d8c4b26eb225dbfc7845 # v0.4.0
+          # renovate: datasource=github-releases depName=jdx/mise
+          version: 2026.10.9
+          install_args: go
 
       - name: Run gomodscan (SARIF)
-        run: just scan-sarif gomodscan.sarif
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "0"
+        run: mise run scan-sarif gomodscan.sarif
 
       - name: Upload gomodscan SARIF
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: gomodscan.sarif
           category: gomodscan
