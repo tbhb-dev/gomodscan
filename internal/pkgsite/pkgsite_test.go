@@ -384,7 +384,7 @@ func TestRetryTransport_ReportsLastNetworkError(t *testing.T) {
 		assert.Equal(t, retryhttp.MaxRetries+1, re.Attempts)
 		assert.Equal(t, int32(retryhttp.MaxRetries+1), count.Load())
 		assert.Zero(t, re.LastStatus, "no attempt got an HTTP response")
-		assert.Contains(t, err.Error(), "connection refused (attempts: 4, no HTTP response)")
+		assert.Contains(t, err.Error(), "connection refused (attempts: 4, last status: 0, no HTTP response)")
 	})
 }
 

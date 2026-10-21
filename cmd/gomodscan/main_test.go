@@ -876,7 +876,7 @@ func TestRun_SummaryJSON(t *testing.T) {
 				{
 					Module:   "example.com/explode@v2.0.0",
 					Lookup:   "vulns",
-					Error:    "lookup vulns: network failure (attempts: 4, no HTTP response)",
+					Error:    "lookup vulns: network failure (attempts: 4, last status: 0, no HTTP response)",
 					Attempts: 4,
 				},
 			},

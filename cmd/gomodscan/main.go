@@ -219,7 +219,8 @@ type options struct {
 // lookupError records one registry lookup that still failed for a module
 // after the retries. Lookup names the registry call. Attempts and LastStatus
 // come from the [retryhttp.Error] the client returns, and stay 0 for a
-// failure that never reached the transport.
+// failure that never reached the transport. A LastStatus of 0 also means the
+// last attempt got no HTTP response.
 type lookupError struct {
 	Module     string `json:"module"`
 	Lookup     string `json:"lookup"`

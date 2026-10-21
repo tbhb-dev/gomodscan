@@ -305,7 +305,7 @@ func TestError(t *testing.T) {
 	t.Run("reports a missing HTTP response", func(t *testing.T) {
 		t.Parallel()
 		err := &retryhttp.Error{Err: errConnReset, Attempts: 4}
-		assert.Equal(t, "connection reset (attempts: 4, no HTTP response)", err.Error())
+		assert.Equal(t, "connection reset (attempts: 4, last status: 0, no HTTP response)", err.Error())
 	})
 
 	t.Run("unwraps to the client error", func(t *testing.T) {

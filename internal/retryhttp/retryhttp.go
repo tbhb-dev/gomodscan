@@ -123,7 +123,7 @@ type Error struct {
 
 func (e *Error) Error() string {
 	if e.LastStatus == 0 {
-		return fmt.Sprintf("%v (attempts: %d, no HTTP response)", e.Err, e.Attempts)
+		return fmt.Sprintf("%v (attempts: %d, last status: 0, no HTTP response)", e.Err, e.Attempts)
 	}
 	return fmt.Sprintf("%v (attempts: %d, last status: %d)", e.Err, e.Attempts, e.LastStatus)
 }
