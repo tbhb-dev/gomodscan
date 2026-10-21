@@ -192,6 +192,7 @@ func TestNewTransport_DoesNotRetryTerminalStatus(t *testing.T) {
 		http.StatusForbidden,
 		http.StatusNotFound,
 		http.StatusUnprocessableEntity,
+		http.StatusNotImplemented,
 	} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			t.Parallel()
@@ -205,7 +206,7 @@ func TestNewTransport_DoesNotRetryTerminalStatus(t *testing.T) {
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = resp.Body.Close() })
 				assert.Equal(t, status, resp.StatusCode)
-				assert.Equal(t, int32(1), count.Load(), "a terminal 4xx must not be retried")
+				assert.Equal(t, int32(1), count.Load(), "a terminal status must not be retried")
 			})
 		})
 	}
