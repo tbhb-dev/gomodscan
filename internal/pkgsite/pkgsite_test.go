@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package pkgsite_test
 
@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/pkgsite"
-	"github.com/proofhouse/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/pkgsite"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
 )
 
 // mustWrite writes body to w and records any error against t.
@@ -92,7 +92,7 @@ func TestVersions(t *testing.T) {
 			name:   "single page returns all items and headers match contract",
 			module: cobraModule,
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				assert.Equal(t, "/v1beta/versions/"+cobraModule, r.URL.Path)
+				assert.Equal(t, "/v1/versions/"+cobraModule, r.URL.Path)
 				assert.Equal(t, "200", r.URL.Query().Get("limit"))
 				assert.Empty(t, r.URL.Query().Get("token"))
 				assert.Equal(t, pkgsite.DefaultUserAgent, r.Header.Get("User-Agent"))
@@ -281,6 +281,10 @@ func TestVersions_ContextCancelled(t *testing.T) {
 
 const retryOKBody = `{"items":[{"modulePath":"example.com/m","version":"v1.0.0","latestVersion":"v1.0.0"}],"total":1}`
 
+// errConnRefused stands in for a transient network error the in-memory
+// transport surfaces on every attempt.
+var errConnRefused = errors.New("connection refused")
+
 // roundTripperFunc adapts a function to an http.RoundTripper, standing in
 // for the network so the retry policy runs under a fake clock with no
 // real I/O. (synctest doesn't advance time across real network blocks.)
@@ -358,6 +362,47 @@ func TestRetryTransport_ExhaustsRetriesOnPersistentServerError(t *testing.T) {
 			count.Load(),
 			"should attempt the initial request plus every retry",
 		)
+		var re *retryhttp.Error
+		require.ErrorAs(t, err, &re)
+		assert.Equal(t, retryhttp.MaxRetries+1, re.Attempts)
+		assert.Equal(t, http.StatusServiceUnavailable, re.LastStatus)
+	})
+}
+
+func TestRetryTransport_ReportsLastNetworkError(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c, count := retryClient(retryhttp.AttemptTimeout,
+			func(_ int32, _ *http.Request) (*http.Response, error) {
+				return nil, errConnRefused
+			})
+
+		_, err := c.Versions(t.Context(), "example.com/m")
+		require.ErrorIs(t, err, errConnRefused)
+		var re *retryhttp.Error
+		require.ErrorAs(t, err, &re)
+		assert.Equal(t, retryhttp.MaxRetries+1, re.Attempts)
+		assert.Equal(t, int32(retryhttp.MaxRetries+1), count.Load())
+		assert.Zero(t, re.LastStatus, "no attempt got an HTTP response")
+		assert.Contains(t, err.Error(), "connection refused (attempts: 4, no HTTP response)")
+	})
+}
+
+func TestRetryTransport_DoesNotRetryForbidden(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c, count := retryClient(retryhttp.AttemptTimeout,
+			func(_ int32, req *http.Request) (*http.Response, error) {
+				return fakeResponse(req, http.StatusForbidden, "forbidden"), nil
+			})
+
+		_, err := c.Versions(t.Context(), "example.com/m")
+		require.ErrorIs(t, err, pkgsite.ErrUnexpectedStatus)
+		assert.Equal(t, int32(1), count.Load(), "403 is terminal and must not be retried")
+		var re *retryhttp.Error
+		require.ErrorAs(t, err, &re)
+		assert.Equal(t, 1, re.Attempts)
+		assert.Equal(t, http.StatusForbidden, re.LastStatus)
 	})
 }
 

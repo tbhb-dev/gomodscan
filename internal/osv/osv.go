@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Package osv provides a minimal client for the OSV.dev v1 API
 // documented in the [OSV.dev API reference]. The malscan tool uses
@@ -30,7 +30,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/proofhouse/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
 )
 
 const (
@@ -41,7 +41,7 @@ const (
 	// DefaultUserAgent identifies gomodscan traffic to OSV.dev. A
 	// descriptive value lets the upstream operator tell these
 	// requests apart from a generic Go HTTP client.
-	DefaultUserAgent = "gomodscan/1 (+https://github.com/proofhouse/gomodscan)"
+	DefaultUserAgent = "gomodscan/1 (+https://github.com/tbhb-dev/gomodscan)"
 )
 
 // ErrUnexpectedStatus reports that OSV.dev returned an HTTP status
@@ -151,6 +151,7 @@ func (c *Client) Query(ctx context.Context, pkg Package, version string) ([]Vuln
 		return nil, fmt.Errorf("marshal request for %s: %w", pkg.Name, err)
 	}
 
+	ctx, attempts := retryhttp.WithAttempts(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("build request for %s: %w", pkg.Name, err)
@@ -161,7 +162,7 @@ func (c *Client) Query(ctx context.Context, pkg Package, version string) ([]Vuln
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("POST %s: %w", reqURL, err)
+		return nil, &retryhttp.Error{Err: fmt.Errorf("POST %s: %w", reqURL, err), Attempts: attempts()}
 	}
 	defer resp.Body.Close()
 
@@ -169,11 +170,19 @@ func (c *Client) Query(ctx context.Context, pkg Package, version string) ([]Vuln
 	case http.StatusOK:
 		var qr queryResponse
 		if decErr := json.NewDecoder(resp.Body).Decode(&qr); decErr != nil {
-			return nil, fmt.Errorf("decode %s: %w", pkg.Name, decErr)
+			return nil, &retryhttp.Error{
+				Err:        fmt.Errorf("decode %s: %w", pkg.Name, decErr),
+				Attempts:   attempts(),
+				LastStatus: resp.StatusCode,
+			}
 		}
 		return qr.Vulns, nil
 	default:
-		return nil, fmt.Errorf("%w: POST %s: status %d", ErrUnexpectedStatus, reqURL, resp.StatusCode)
+		return nil, &retryhttp.Error{
+			Err:        fmt.Errorf("%w: POST %s: status %d", ErrUnexpectedStatus, reqURL, resp.StatusCode),
+			Attempts:   attempts(),
+			LastStatus: resp.StatusCode,
+		}
 	}
 }
 

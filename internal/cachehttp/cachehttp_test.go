@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package cachehttp_test
 
@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/cachehttp"
+	"github.com/tbhb-dev/gomodscan/internal/cachehttp"
 )
 
 // The transport's freshness logic turns on timing, so the tests that cross a
@@ -32,7 +32,7 @@ import (
 
 const okBody = `{"ok":true}`
 
-const moduleURL = "http://example.test/v1beta/versions/example.com/m"
+const moduleURL = "http://example.test/v1/versions/example.com/m"
 
 // roundTripperFunc adapts a function to an http.RoundTripper, standing in for
 // the network so the cache policy runs with no real I/O.

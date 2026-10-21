@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Package exitcode defines the exit-code convention every
 // findings-reporting scanner under tools/ follows. Wrapping the
@@ -18,8 +18,12 @@ const (
 	// to review the output before proceeding.
 	Findings = 1
 
-	// ToolFailure signals that the tool itself failed (network
-	// error, parse error, missing inputs, etc.) and couldn't list
-	// findings. Callers should retry or escalate.
+	// ToolFailure signals that the tool couldn't finish the job: an
+	// input it scans couldn't be evaluated even after retries, or the
+	// run failed outright (bad arguments, a parse error, missing
+	// inputs, a failed output write). It outranks Findings, so a run
+	// that surfaced findings but left an input unevaluated still
+	// exits ToolFailure, since its findings list may be incomplete.
+	// Callers should retry or escalate.
 	ToolFailure = 2
 )

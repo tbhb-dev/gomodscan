@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Package cachehttp builds an on-disk caching [http.RoundTripper] for the
-// pkg.go.dev client. pkg.go.dev answers GET /v1beta/versions/{module} with
+// pkg.go.dev client. pkg.go.dev answers GET /v1/versions/{module} with
 // Cache-Control: public, max-age=3600 and sends no revalidation header and no
 // Vary, so a private cache may reuse a module's version list for the freshness
 // window the server grants and re-fetches in full once that window lapses. A
@@ -23,7 +23,7 @@
 // a scan up yet never fails one.
 //
 // Layer the cache outside the retry transport
-// (github.com/proofhouse/gomodscan/internal/retryhttp) so a fresh hit
+// (github.com/tbhb-dev/gomodscan/internal/retryhttp) so a fresh hit
 // short-circuits before any backoff or socket. NewTransport takes that retry
 // transport as its inner RoundTripper.
 package cachehttp

@@ -7,7 +7,6 @@ IDs?
 errOut
 msg
 msgFile
-[Pp]roofhouse
 regexes
 src
 staticcheck

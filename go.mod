@@ -1,4 +1,4 @@
-module github.com/proofhouse/gomodscan
+module github.com/tbhb-dev/gomodscan
 
 go 1.26
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package pkgsite_test
 
@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/cachehttp"
-	"github.com/proofhouse/gomodscan/internal/pkgsite"
-	"github.com/proofhouse/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/cachehttp"
+	"github.com/tbhb-dev/gomodscan/internal/pkgsite"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
 )
 
 // TestVersions_CacheStackServesSecondCallFromDisk exercises the full transport

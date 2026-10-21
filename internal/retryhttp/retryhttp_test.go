@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package retryhttp_test
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -15,7 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
 )
 
 // The tests below drive failsafe-go's retry/backoff policy through a real
@@ -27,6 +29,10 @@ import (
 // the in-memory transport stands in for the network.)
 
 const okBody = `{"ok":true}`
+
+// errConnReset stands in for a transient network error the inner transport
+// surfaces.
+var errConnReset = errors.New("connection reset")
 
 // roundTripperFunc adapts a function to an http.RoundTripper, standing in for
 // the network so the retry policy runs under a fake clock with no real I/O.
@@ -180,7 +186,13 @@ func TestNewTransport_RetriesTooManyRequests(t *testing.T) {
 
 func TestNewTransport_DoesNotRetryTerminalStatus(t *testing.T) {
 	t.Parallel()
-	for _, status := range []int{http.StatusNotFound, http.StatusBadRequest} {
+	for _, status := range []int{
+		http.StatusBadRequest,
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusUnprocessableEntity,
+	} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
@@ -197,6 +209,112 @@ func TestNewTransport_DoesNotRetryTerminalStatus(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestNewTransport_BacksOffExponentially pins the backoff schedule on a
+// persistent 5xx without Retry-After. The wait doubles from about 1 s to 4 s
+// between the four attempts, 7 s in all, give or take the 25% jitter on each
+// step.
+func TestNewTransport_BacksOffExponentially(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c, count := retryClient(retryhttp.AttemptTimeout,
+			func(_ int32, req *http.Request) (*http.Response, error) {
+				return fakeResponse(req, http.StatusBadGateway, "upstream down"), nil
+			})
+
+		start := time.Now()
+		resp, err := get(t, c)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		elapsed := time.Since(start)
+		assert.Equal(t, int32(4), count.Load(), "four attempts in all: the initial request plus three retries")
+		assert.GreaterOrEqual(t, elapsed, 5250*time.Millisecond, "7 s of backoff, minus jitter")
+		assert.LessOrEqual(t, elapsed, 8750*time.Millisecond, "7 s of backoff, plus jitter")
+	})
+}
+
+func TestWithAttempts_CountsEveryAttempt(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		respond func(attempt int32, req *http.Request) (*http.Response, error)
+		want    int
+	}{
+		{
+			name: "persistent 5xx exhausts every attempt",
+			respond: func(_ int32, req *http.Request) (*http.Response, error) {
+				return fakeResponse(req, http.StatusServiceUnavailable, "still broken"), nil
+			},
+			want: retryhttp.MaxRetries + 1,
+		},
+		{
+			name: "persistent network error exhausts every attempt",
+			respond: func(_ int32, _ *http.Request) (*http.Response, error) {
+				return nil, errConnReset
+			},
+			want: retryhttp.MaxRetries + 1,
+		},
+		{
+			name: "terminal 4xx stops after one attempt",
+			respond: func(_ int32, req *http.Request) (*http.Response, error) {
+				return fakeResponse(req, http.StatusForbidden, "forbidden"), nil
+			},
+			want: 1,
+		},
+		{
+			name: "success after one retry counts both attempts",
+			respond: func(attempt int32, req *http.Request) (*http.Response, error) {
+				if attempt == 1 {
+					return fakeResponse(req, http.StatusInternalServerError, "boom"), nil
+				}
+				return fakeResponse(req, http.StatusOK, okBody), nil
+			},
+			want: 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				c, _ := retryClient(retryhttp.AttemptTimeout, tc.respond)
+				ctx, attempts := retryhttp.WithAttempts(t.Context())
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.test", nil)
+				require.NoError(t, err)
+
+				resp, err := c.Do(req)
+				if err == nil {
+					t.Cleanup(func() { _ = resp.Body.Close() })
+				}
+				assert.Equal(t, tc.want, attempts())
+			})
+		})
+	}
+}
+
+func TestError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reports the last HTTP status", func(t *testing.T) {
+		t.Parallel()
+		err := &retryhttp.Error{Err: errConnReset, Attempts: 4, LastStatus: http.StatusServiceUnavailable}
+		assert.Equal(t, "connection reset (attempts: 4, last status: 503)", err.Error())
+	})
+
+	t.Run("reports a missing HTTP response", func(t *testing.T) {
+		t.Parallel()
+		err := &retryhttp.Error{Err: errConnReset, Attempts: 4}
+		assert.Equal(t, "connection reset (attempts: 4, no HTTP response)", err.Error())
+	})
+
+	t.Run("unwraps to the client error", func(t *testing.T) {
+		t.Parallel()
+		err := fmt.Errorf("lookup: %w", &retryhttp.Error{Err: errConnReset, Attempts: 1})
+		require.ErrorIs(t, err, errConnReset)
+		var re *retryhttp.Error
+		require.ErrorAs(t, err, &re)
+		assert.Equal(t, 1, re.Attempts)
+	})
 }
 
 func TestNewTransport_RetriesPerAttemptTimeout(t *testing.T) {

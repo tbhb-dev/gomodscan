@@ -1,25 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package main
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/exitcode"
-	"github.com/proofhouse/gomodscan/internal/findings"
-	"github.com/proofhouse/gomodscan/internal/osv"
-	"github.com/proofhouse/gomodscan/internal/pkgsite"
-	"github.com/proofhouse/gomodscan/internal/vendormod"
+	"github.com/tbhb-dev/gomodscan/internal/buildmeta"
+	"github.com/tbhb-dev/gomodscan/internal/exitcode"
+	"github.com/tbhb-dev/gomodscan/internal/findings"
+	"github.com/tbhb-dev/gomodscan/internal/osv"
+	"github.com/tbhb-dev/gomodscan/internal/pkgsite"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/vendormod"
 )
 
 // errLookupFailure stands in for any non-not-found pkg.go.dev lookup
@@ -445,6 +450,49 @@ func writeVendorModulesTxt(t *testing.T, dir, body string) {
 	require.NoError(t, os.WriteFile(filepath.Join(vendorDir, "modules.txt"), []byte(body), 0o600))
 }
 
+// exhaustedLookup builds the error the pkg.go.dev client returns once the
+// retry transport gives up on a persistent 503.
+func exhaustedLookup() error {
+	return &retryhttp.Error{
+		Err: fmt.Errorf("%w: GET https://pkg.go.dev/v1/versions/example.com/explode?limit=200: status 503",
+			pkgsite.ErrUnexpectedStatus),
+		Attempts:   retryhttp.MaxRetries + 1,
+		LastStatus: http.StatusServiceUnavailable,
+	}
+}
+
+// exhaustedLookupMessage spells out what [exhaustedLookup] prints.
+const exhaustedLookupMessage = "unexpected status from pkg.go.dev: " +
+	"GET https://pkg.go.dev/v1/versions/example.com/explode?limit=200: status 503 " +
+	"(attempts: 4, last status: 503)"
+
+// dirEntries lists the names under dir, so a test can assert a failed write
+// left no temporary file behind.
+func dirEntries(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+// readOnlyDir returns a directory the test process can't create files in.
+// It skips the test where permission bits don't stop the writer: on Windows,
+// and as root. The directory stays empty, so t.TempDir's cleanup removes it
+// without restoring write permission first.
+func readOnlyDir(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permission bits don't block this writer")
+	}
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o500)) //nolint:gosec // a read-only directory is the point of the helper.
+	return dir
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -453,8 +501,7 @@ func TestRun(t *testing.T) {
 		var out, errOut bytes.Buffer
 		rc, err := run(
 			context.Background(),
-			t.TempDir(),
-			"text",
+			options{modroot: t.TempDir(), format: formatText},
 			&fakeVersionsClient{},
 			&fakeVulnsClient{},
 			&out,
@@ -473,10 +520,18 @@ func TestRun(t *testing.T) {
 			"example.com/m": {{Version: "v1.0.0", LatestVersion: "v1.0.0"}},
 		}}
 		var out, errOut bytes.Buffer
-		rc, err := run(context.Background(), dir, "json", versions, &fakeVulnsClient{}, &out, &errOut)
+		rc, err := run(
+			context.Background(),
+			options{modroot: dir, format: "json"},
+			versions,
+			&fakeVulnsClient{},
+			&out,
+			&errOut,
+		)
 		require.Error(t, err)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		assert.Contains(t, err.Error(), "emit findings")
+		require.ErrorIs(t, err, errUnknownFormat)
+		assert.Empty(t, out.String())
 	})
 
 	t.Run("returns OK with the no-findings banner when nothing matches", func(t *testing.T) {
@@ -490,11 +545,11 @@ func TestRun(t *testing.T) {
 			"example.com/clean@v1.0.0": {{ID: "GO-2025-0001"}},
 		}}
 		var out, errOut bytes.Buffer
-		rc, err := run(context.Background(), dir, "text", versions, vulns, &out, &errOut)
+		rc, err := run(context.Background(), options{modroot: dir, format: formatText}, versions, vulns, &out, &errOut)
 		require.NoError(t, err)
 		assert.Equal(t, exitcode.OK, rc)
 		assert.Empty(t, out.String())
-		assert.Contains(t, errOut.String(), "scanned 1 module(s), no findings")
+		assert.Equal(t, "gomodscan: scanned 1 module(s), no findings\n", errOut.String())
 	})
 
 	t.Run("returns Findings with both scanners contributing for one module", func(t *testing.T) {
@@ -510,15 +565,15 @@ func TestRun(t *testing.T) {
 			"example.com/bad@v1.0.0": {{ID: "MAL-2025-0001", Summary: "Backdoor"}},
 		}}
 		var out, errOut bytes.Buffer
-		rc, err := run(context.Background(), dir, "text", versions, vulns, &out, &errOut)
+		rc, err := run(context.Background(), options{modroot: dir, format: formatText}, versions, vulns, &out, &errOut)
 		require.NoError(t, err)
 		assert.Equal(t, exitcode.Findings, rc)
 		assert.Contains(t, out.String(), "warning: gomodscan/retracted: example.com/bad@v1.0.0")
 		assert.Contains(t, out.String(), "error: gomodscan/malicious-package: example.com/bad@v1.0.0")
-		assert.Contains(t, errOut.String(), "2 finding(s) across 1 module(s)")
+		assert.Equal(t, "gomodscan: 2 finding(s) across 1 module(s)\n", errOut.String())
 	})
 
-	t.Run("logs and skips lookup errors from both scanners", func(t *testing.T) {
+	t.Run("returns ToolFailure when a module can't be evaluated", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeVendorModulesTxt(t, dir,
@@ -529,18 +584,57 @@ func TestRun(t *testing.T) {
 			responses: map[string][]pkgsite.ModuleVersion{
 				"example.com/ok": {{Version: "v1.0.0", LatestVersion: "v1.0.0"}},
 			},
-			errors: map[string]error{"example.com/explode": errLookupFailure},
+			errors: map[string]error{"example.com/explode": exhaustedLookup()},
 		}
 		vulns := &fakeVulnsClient{
 			errors: map[string]error{"example.com/explode@v2.0.0": errQueryFailure},
 		}
 		var out, errOut bytes.Buffer
-		rc, err := run(context.Background(), dir, "text", versions, vulns, &out, &errOut)
+		rc, err := run(context.Background(), options{modroot: dir, format: formatText}, versions, vulns, &out, &errOut)
 		require.NoError(t, err)
-		assert.Equal(t, exitcode.OK, rc)
-		assert.Contains(t, errOut.String(), "gomodscan: example.com/explode: lookup versions: network failure")
-		assert.Contains(t, errOut.String(), "gomodscan: example.com/explode: lookup vulns: network failure")
-		assert.Contains(t, errOut.String(), "scanned 2 module(s), no findings")
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.Empty(t, out.String())
+		assert.Equal(t,
+			"gomodscan: example.com/explode: lookup versions: "+exhaustedLookupMessage+"\n"+
+				"gomodscan: example.com/explode: lookup vulns: network failure\n"+
+				"gomodscan: 1 module(s) could not be evaluated\n",
+			errOut.String(),
+		)
+	})
+
+	t.Run("an unevaluated module outranks findings", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir,
+			"# example.com/bad v1.0.0\n## explicit\nexample.com/bad\n"+
+				"# example.com/explode v2.0.0\n## explicit\nexample.com/explode\n",
+		)
+		versions := &fakeVersionsClient{
+			responses: map[string][]pkgsite.ModuleVersion{
+				"example.com/bad": {
+					{Version: "v1.0.0", LatestVersion: "v1.0.0", Retracted: true, RetractionReason: "checksum"},
+				},
+			},
+			errors: map[string]error{"example.com/explode": exhaustedLookup()},
+		}
+		var out, errOut bytes.Buffer
+		rc, err := run(
+			context.Background(),
+			options{modroot: dir, format: formatText},
+			versions,
+			&fakeVulnsClient{},
+			&out,
+			&errOut,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.Equal(t, "warning: gomodscan/retracted: example.com/bad@v1.0.0 reason=checksum\n", out.String())
+		assert.Equal(t,
+			"gomodscan: example.com/explode: lookup versions: "+exhaustedLookupMessage+"\n"+
+				"gomodscan: 1 finding(s) across 2 module(s)\n"+
+				"gomodscan: 1 module(s) could not be evaluated\n",
+			errOut.String(),
+		)
 	})
 
 	t.Run("not-found deprecated lookups stay silent in errOut", func(t *testing.T) {
@@ -550,11 +644,371 @@ func TestRun(t *testing.T) {
 		// The fakes return ErrNotFound (versions) and an empty result
 		// (vulns) for any module path they don't recognize.
 		var out, errOut bytes.Buffer
-		rc, err := run(context.Background(), dir, "text", &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
+		rc, err := run(
+			context.Background(),
+			options{modroot: dir, format: formatText},
+			&fakeVersionsClient{},
+			&fakeVulnsClient{},
+			&out,
+			&errOut,
+		)
 		require.NoError(t, err)
 		assert.Equal(t, exitcode.OK, rc)
 		assert.NotContains(t, errOut.String(), "lookup versions")
 		assert.Contains(t, errOut.String(), "scanned 1 module(s), no findings")
+	})
+}
+
+func TestRun_Output(t *testing.T) {
+	t.Parallel()
+
+	retractedVersions := func() *fakeVersionsClient {
+		return &fakeVersionsClient{responses: map[string][]pkgsite.ModuleVersion{
+			"example.com/bad": {
+				{Version: "v1.0.0", LatestVersion: "v1.0.0", Retracted: true, RetractionReason: "checksum"},
+			},
+		}}
+	}
+	const badModule = "# example.com/bad v1.0.0\n## explicit\nexample.com/bad\n"
+
+	t.Run("writes the findings to the file instead of stdout", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, badModule)
+		outDir := t.TempDir()
+		path := filepath.Join(outDir, "findings.txt")
+		require.NoError(t, os.WriteFile(path, []byte("stale\n"), 0o600))
+
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: formatText, output: path}
+		rc, err := run(context.Background(), opts, retractedVersions(), &fakeVulnsClient{}, &out, &errOut)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.Findings, rc)
+		assert.Empty(t, out.String())
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, "warning: gomodscan/retracted: example.com/bad@v1.0.0 reason=checksum\n", string(got))
+		assert.Equal(t, []string{"findings.txt"}, dirEntries(t, outDir), "no temporary file should remain")
+		assert.Equal(t, "gomodscan: 1 finding(s) across 1 module(s)\n", errOut.String())
+	})
+
+	t.Run("a read-only directory fails the run and leaves no file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, badModule)
+		outDir := readOnlyDir(t)
+
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: formatSARIF, output: filepath.Join(outDir, "findings.sarif")}
+		rc, err := run(context.Background(), opts, retractedVersions(), &fakeVulnsClient{}, &out, &errOut)
+		require.Error(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		require.ErrorIs(t, err, os.ErrPermission)
+		assert.Contains(t, err.Error(), "emit findings: create temp file")
+		assert.Empty(t, out.String())
+		assert.Empty(t, dirEntries(t, outDir))
+	})
+
+	t.Run("a failed rename removes the temporary file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, badModule)
+		outDir := t.TempDir()
+		// A non-empty directory at the target path makes the final rename
+		// fail after the temporary file has been written and synced.
+		target := filepath.Join(outDir, "findings.txt")
+		require.NoError(t, os.MkdirAll(filepath.Join(target, "occupied"), 0o750))
+
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: formatText, output: target}
+		rc, err := run(context.Background(), opts, retractedVersions(), &fakeVulnsClient{}, &out, &errOut)
+		require.Error(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.Contains(t, err.Error(), "emit findings: replace "+target)
+		assert.Equal(t, []string{"findings.txt"}, dirEntries(t, outDir), "the temporary file should be gone")
+	})
+
+	t.Run("an unknown format leaves the output file untouched", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, badModule)
+		outDir := t.TempDir()
+
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: "json", output: filepath.Join(outDir, "findings.json")}
+		rc, err := run(context.Background(), opts, retractedVersions(), &fakeVulnsClient{}, &out, &errOut)
+		require.Error(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.Empty(t, dirEntries(t, outDir))
+	})
+}
+
+func TestRun_EmptySARIF(t *testing.T) {
+	t.Parallel()
+
+	// assertEmptySARIF checks for a valid v2.1.0 document holding one run
+	// with the gomodscan driver and an empty, non-null results array.
+	assertEmptySARIF := func(t *testing.T, data []byte) {
+		t.Helper()
+		var doc struct {
+			Version string `json:"version"`
+			Runs    []struct {
+				Tool struct {
+					Driver struct {
+						Name string `json:"name"`
+					} `json:"driver"`
+				} `json:"tool"`
+				Results []json.RawMessage `json:"results"`
+			} `json:"runs"`
+		}
+		require.NoError(t, json.Unmarshal(data, &doc))
+		assert.Equal(t, "2.1.0", doc.Version)
+		require.Len(t, doc.Runs, 1)
+		assert.Equal(t, toolName, doc.Runs[0].Tool.Driver.Name)
+		assert.NotNil(t, doc.Runs[0].Results, "results must be an empty array, not null")
+		assert.Empty(t, doc.Runs[0].Results)
+	}
+
+	t.Run("to stdout", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, "")
+		var out, errOut bytes.Buffer
+		rc, err := run(
+			context.Background(), options{modroot: dir, format: formatSARIF},
+			&fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.OK, rc)
+		assertEmptySARIF(t, out.Bytes())
+		assert.Equal(t, "gomodscan: scanned 0 module(s), no findings\n", errOut.String())
+	})
+
+	t.Run("to a file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, "")
+		path := filepath.Join(t.TempDir(), "gomodscan.sarif")
+		var out, errOut bytes.Buffer
+		rc, err := run(
+			context.Background(), options{modroot: dir, format: formatSARIF, output: path},
+			&fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.OK, rc)
+		assert.Empty(t, out.String())
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assertEmptySARIF(t, data)
+	})
+}
+
+func TestRun_SummaryJSON(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a clean run records an empty errors array", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, "# example.com/clean v1.0.0\n## explicit\nexample.com/clean\n")
+		versions := &fakeVersionsClient{responses: map[string][]pkgsite.ModuleVersion{
+			"example.com/clean": {{Version: "v1.0.0", LatestVersion: "v1.0.0"}},
+		}}
+		path := filepath.Join(t.TempDir(), "summary.json")
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: formatText, summaryJSON: path}
+		rc, err := run(context.Background(), opts, versions, &fakeVulnsClient{}, &out, &errOut)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.OK, rc)
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.JSONEq(t,
+			`{"schema":1,"version":"`+buildmeta.Get().Version+
+				`","modules":1,"findings":0,"unevaluated":0,"errors":[],"error":null}`,
+			string(got),
+		)
+		assert.Contains(t, string(got), `"errors":[]`, "errors must be an empty array, not null")
+		assert.Contains(t, string(got), `"error":null`, "a run whose scan ran records a null error")
+	})
+
+	t.Run("an exit-2 run still writes the summary with every failed lookup", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir,
+			"# example.com/bad v1.0.0\n## explicit\nexample.com/bad\n"+
+				"# example.com/explode v2.0.0\n## explicit\nexample.com/explode\n",
+		)
+		versions := &fakeVersionsClient{
+			responses: map[string][]pkgsite.ModuleVersion{
+				"example.com/bad": {
+					{Version: "v1.0.0", LatestVersion: "v1.0.0", Retracted: true, RetractionReason: "checksum"},
+				},
+			},
+			errors: map[string]error{"example.com/explode": exhaustedLookup()},
+		}
+		vulns := &fakeVulnsClient{errors: map[string]error{
+			"example.com/explode@v2.0.0": &retryhttp.Error{Err: errQueryFailure, Attempts: retryhttp.MaxRetries + 1},
+		}}
+		path := filepath.Join(t.TempDir(), "summary.json")
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: formatText, summaryJSON: path}
+		rc, err := run(context.Background(), opts, versions, vulns, &out, &errOut)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		var sum summary
+		require.NoError(t, json.Unmarshal(got, &sum))
+		assert.Equal(t, summary{
+			Schema:      1,
+			Version:     buildmeta.Get().Version,
+			Modules:     2,
+			Findings:    1,
+			Unevaluated: 1,
+			Errors: []lookupError{
+				{
+					Module:     "example.com/explode@v2.0.0",
+					Lookup:     "versions",
+					Error:      "lookup versions: " + exhaustedLookupMessage,
+					Attempts:   4,
+					LastStatus: http.StatusServiceUnavailable,
+				},
+				{
+					Module:   "example.com/explode@v2.0.0",
+					Lookup:   "vulns",
+					Error:    "lookup vulns: network failure (attempts: 4, no HTTP response)",
+					Attempts: 4,
+				},
+			},
+		}, sum)
+		assert.Contains(t, string(got), `"last_status":0`, "a missing HTTP response records last_status 0")
+		assert.Contains(t, string(got), `"error":null`, "an exit-2 run whose scan ran records a null error")
+	})
+
+	t.Run("each failed lookup names its registry call", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir,
+			"# example.com/a v1.0.0\n## explicit\nexample.com/a\n"+
+				"# example.com/b v1.0.0\n## explicit\nexample.com/b\n",
+		)
+		versions := &fakeVersionsClient{errors: map[string]error{"example.com/a": errLookupFailure}}
+		vulns := &fakeVulnsClient{errors: map[string]error{"example.com/b@v1.0.0": errQueryFailure}}
+		path := filepath.Join(t.TempDir(), "summary.json")
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: formatText, summaryJSON: path}
+		rc, err := run(context.Background(), opts, versions, vulns, &out, &errOut)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		var sum summary
+		require.NoError(t, json.Unmarshal(got, &sum))
+		require.Len(t, sum.Errors, 2)
+		assert.Equal(t, "example.com/a@v1.0.0", sum.Errors[0].Module)
+		assert.Equal(t, lookupVersions, sum.Errors[0].Lookup)
+		assert.Equal(t, "example.com/b@v1.0.0", sum.Errors[1].Module)
+		assert.Equal(t, lookupVulns, sum.Errors[1].Lookup)
+		assert.Equal(t, 2, sum.Unevaluated)
+		assert.Contains(t, string(got), `"lookup":"versions"`)
+		assert.Contains(t, string(got), `"lookup":"vulns"`)
+	})
+
+	t.Run("a failed output write still writes the summary", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, "")
+		path := filepath.Join(t.TempDir(), "summary.json")
+		var out, errOut bytes.Buffer
+		opts := options{
+			modroot:     dir,
+			format:      formatText,
+			output:      filepath.Join(t.TempDir(), "missing", "findings.txt"),
+			summaryJSON: path,
+		}
+		rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
+		require.Error(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.FileExists(t, path)
+	})
+
+	t.Run("a failed summary write exits 2", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, "")
+		outDir := readOnlyDir(t)
+		var out, errOut bytes.Buffer
+		opts := options{modroot: dir, format: formatText, summaryJSON: filepath.Join(outDir, "summary.json")}
+		rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.Contains(t, errOut.String(), "gomodscan: write summary: create temp file for")
+		assert.Empty(t, dirEntries(t, outDir))
+	})
+
+	t.Run("a scan that never starts records its error", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name string
+			opts func(t *testing.T) options
+			want string
+		}{
+			{
+				name: "unreadable module set",
+				opts: func(t *testing.T) options {
+					t.Helper()
+					return options{modroot: t.TempDir(), format: formatText}
+				},
+				want: "read vendored modules: ",
+			},
+			{
+				name: "unknown format",
+				opts: func(t *testing.T) options {
+					t.Helper()
+					dir := t.TempDir()
+					writeVendorModulesTxt(t, dir, "# example.com/m v1.0.0\n## explicit\nexample.com/m\n")
+					return options{modroot: dir, format: "json"}
+				},
+				want: `unknown -format (want text or sarif): "json"`,
+			},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				opts := tc.opts(t)
+				opts.summaryJSON = filepath.Join(t.TempDir(), "summary.json")
+				var out, errOut bytes.Buffer
+				rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
+				require.Error(t, err)
+				assert.Equal(t, exitcode.ToolFailure, rc)
+
+				got, readErr := os.ReadFile(opts.summaryJSON)
+				require.NoError(t, readErr)
+				var sum summary
+				require.NoError(t, json.Unmarshal(got, &sum))
+				require.NotNil(t, sum.Error, "a scan that never started must record its error")
+				assert.Equal(t, err.Error(), *sum.Error)
+				assert.Contains(t, *sum.Error, tc.want)
+				assert.Equal(t, summarySchema, sum.Schema)
+				assert.Zero(t, sum.Modules)
+				assert.Zero(t, sum.Findings)
+				assert.Zero(t, sum.Unevaluated)
+				assert.Contains(t, string(got), `"errors":[]`, "errors must be an empty array, not null")
+			})
+		}
+	})
+
+	t.Run("a failed summary write before the scan still exits 2", func(t *testing.T) {
+		t.Parallel()
+		outDir := readOnlyDir(t)
+		var out, errOut bytes.Buffer
+		opts := options{modroot: t.TempDir(), format: formatText, summaryJSON: filepath.Join(outDir, "summary.json")}
+		rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
+		require.Error(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.Contains(t, errOut.String(), "gomodscan: write summary: create temp file for")
+		assert.Empty(t, dirEntries(t, outDir))
 	})
 }
 
@@ -568,6 +1022,20 @@ func TestRealMain(t *testing.T) {
 		assert.Equal(t, exitcode.ToolFailure, rc)
 	})
 
+	t.Run("a bad flag after -summary-json records the parse error", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "summary.json")
+		var out, errOut bytes.Buffer
+		rc := realMain([]string{"--summary-json", path, "--nonsense"}, &out, &errOut)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		var sum summary
+		require.NoError(t, json.Unmarshal(got, &sum))
+		require.NotNil(t, sum.Error)
+		assert.Equal(t, "flag provided but not defined: -nonsense", *sum.Error)
+	})
+
 	t.Run("missing vendor tree prints the error line and returns ToolFailure", func(t *testing.T) {
 		t.Parallel()
 		var out, errOut bytes.Buffer
@@ -576,6 +1044,34 @@ func TestRealMain(t *testing.T) {
 		// The error-log branch only fires when run returns a non-nil
 		// error. Asserting the prefix confirms that branch executed.
 		assert.Contains(t, errOut.String(), "gomodscan: read vendored modules:")
+	})
+
+	t.Run("short and long output flags write the file", func(t *testing.T) {
+		t.Parallel()
+		for _, flagName := range []string{"-o", "--output"} {
+			dir := t.TempDir()
+			writeVendorModulesTxt(t, dir, "")
+			outPath := filepath.Join(t.TempDir(), "out.sarif")
+			sumPath := filepath.Join(t.TempDir(), "summary.json")
+			var out, errOut bytes.Buffer
+			rc := realMain([]string{
+				"-modroot", dir, "-format", formatSARIF, flagName, outPath, "--summary-json", sumPath,
+			}, &out, &errOut)
+			assert.Equal(t, exitcode.OK, rc, flagName)
+			assert.Empty(t, out.String(), flagName)
+			assert.FileExists(t, outPath, flagName)
+			assert.FileExists(t, sumPath, flagName)
+		}
+	})
+
+	t.Run("help documents the output and summary flags", func(t *testing.T) {
+		t.Parallel()
+		var out, errOut bytes.Buffer
+		realMain([]string{"-h"}, &out, &errOut)
+		assert.Contains(t, errOut.String(), "-o file")
+		assert.Contains(t, errOut.String(), "-output file")
+		assert.Contains(t, errOut.String(), "-summary-json file")
+		assert.Contains(t, errOut.String(), "on every exit status (schema 1)")
 	})
 
 	t.Run("version flag prints build metadata and returns OK", func(t *testing.T) {

@@ -4,6 +4,8 @@
 
 `gomodscan` is a Go command-line tool that scans the modules a Go project vendors. It reports a module that pkg.go.dev marks as retracted or deprecated, and a module that the OSV malicious-package registry flags as malware. It writes text or SARIF. The repository also holds its development tools and CI gates, and it uses devtools v0.14.0.
 
+The scanner exits 0 when every module comes back clean and 1 when it reports a finding. Exit 2 means a module stayed unevaluated after the retries or the run failed, so an unevaluated module outranks findings. `-o` (long form `--output`) writes the findings to a file instead of stdout. `--summary-json` writes a JSON summary of the run at schema 1 on every exit status, and it records the cause when the scan never started. Both files get replaced atomically.
+
 ## Layout
 
 `cmd/gomodscan/` holds the command-line entry point and its tests. `internal/` holds the packages behind it: `vendormod` reads `vendor/modules.txt`, `pkgsite` and `osv` query the two registries, `cachehttp` and `retryhttp` wrap their HTTP transport, `findings` writes the text and SARIF output, `exitcode` names the exit statuses, and `buildmeta` resolves version metadata from linker flags or runtime build info.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package osv_test
 
@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/osv"
-	"github.com/proofhouse/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/osv"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
 )
 
 // mustWrite writes body to w and records any error against t.
@@ -331,6 +331,10 @@ func TestQuery_ExhaustsRetriesOnPersistentServerError(t *testing.T) {
 			count.Load(),
 			"should attempt the initial request plus every retry",
 		)
+		var re *retryhttp.Error
+		require.ErrorAs(t, err, &re)
+		assert.Equal(t, retryhttp.MaxRetries+1, re.Attempts)
+		assert.Equal(t, http.StatusServiceUnavailable, re.LastStatus)
 	})
 }
 
@@ -344,5 +348,9 @@ func TestQuery_DoesNotRetryTerminalStatus(t *testing.T) {
 		_, err := c.Query(t.Context(), osv.Package{Name: "example.com/m", Ecosystem: "Go"}, "v1.0.0")
 		require.ErrorIs(t, err, osv.ErrUnexpectedStatus)
 		assert.Equal(t, int32(1), count.Load(), "a terminal 4xx must not be retried")
+		var re *retryhttp.Error
+		require.ErrorAs(t, err, &re)
+		assert.Equal(t, 1, re.Attempts)
+		assert.Equal(t, http.StatusBadRequest, re.LastStatus)
 	})
 }
