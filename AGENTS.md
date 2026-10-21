@@ -44,7 +44,7 @@ Read `mise.toml` before trusting it. In each fresh worktree, run `mise trust`, t
 
 Go 1.27.3 comes from the shared payload, while `go.mod` declares `go 1.26` with `toolchain go1.26.5`. Use `mise exec -- go version` to inspect the active toolchain. Go tool directives declare the analyzer dependencies, and `DEVTOOLS_GO_MODULES_MODE=vendor` loads them from the tracked `vendor/` tree. Commit `go.sum` with the vendored sources.
 
-gomodscan scans itself from source. Both scan tasks and the `scan` hook run `go run ./cmd/gomodscan`, so each scan exercises the code under review. The shared `devtools:gomodscan` task needs `go tool gomodscan`, and this module has no such tool directive.
+gomodscan scans itself from source. Both scan tasks and the `scan` hook build `./cmd/gomodscan` and then run the binary, so each scan exercises the code under review and the scanner's own exit status gates it. The shared `devtools:gomodscan` task needs `go tool gomodscan`, and this module has no such tool directive.
 
 `.testcoverage.yml` sets the coverage floors: 75% for each file, 80% for each package, and 85% for the total. They skip `internal/exitcode`, which holds constants and no statements.
 

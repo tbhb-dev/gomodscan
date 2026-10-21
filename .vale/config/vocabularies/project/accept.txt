@@ -34,7 +34,6 @@ golang
 golangci
 govulncheck
 gremlins
-Justfile
 mtime[s]?
 QEMU
 [Dd]ockerfile
