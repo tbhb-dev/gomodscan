@@ -1,11 +1,16 @@
 tag_prefix = "v"
 
+# No pre_bump_hooks: gomodscan carries no version literal for a release to
+# rewrite. The binary's Version, Commit and Date arrive through ldflags at
+# build time (.devtools/scripts/go-ldflags.sh), and apm.yml's version
+# describes the local agent manifest rather than a published package.
+
 [changelog]
 path = "CHANGELOG.md"
-template = "remote"
+template = ".cog/changelog.tera"
 remote = "github.com"
 repository = "gomodscan"
-owner = "proofhouse"
+owner = "tbhb-dev"
 authors = [{ username = "tbhb", signature = "Tony Burns" }]
 
 [commit_types]

@@ -1,0 +1,15 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "Write|Edit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "guard-markdown --hook",
+          "timeout": 10
+        }
+      ],
+      "_apm_source": "tbhb-dev/devtools/packages/agents/claude"
+    }
+  ]
+}

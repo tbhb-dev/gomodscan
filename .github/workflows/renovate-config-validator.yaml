@@ -1,24 +1,32 @@
 ---
-# PR gate that catches broken Renovate config before it lands on main,
-# delegated to the shared reusable workflow in proofhouse/github-actions.
-# The reusable workflow runs the SHA-pinned renovate-config-validator image
-# against .github/renovate.json5 (its default config_path), so this caller
-# only supplies the pull_request trigger.
+# PR gate that catches broken Renovate config before it lands on main.
+# The cron Renovate workflow only runs on schedule, so a malformed config
+# on main can sit unnoticed until the next firing.
+#
+# Delegates to the shared reusable workflow in tbhb-dev/devtools,
+# which runs renovate-config-validator. Pinned by commit SHA; the trailing tag comment marks the matching release for
+# Renovate.
 name: Validate Renovate configuration
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "**renovate.json5"
   pull_request:
     paths:
       # Catch nested renovate configs too if/when subprojects appear.
       - "**renovate.json5"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   validate:
-    name: Validate Renovate configuration
     permissions:
       contents: read
     # yamllint disable-line rule:line-length
-    uses: proofhouse/github-actions/.github/workflows/renovate-config-validator.yaml@131c527df05799916f98d8c4b26eb225dbfc7845 # v0.4.0
+    uses: tbhb-dev/devtools/.github/workflows/renovate-config-validator.yaml@830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9 # v0.14.0
+    with:
+      config_path: .github/renovate.json5

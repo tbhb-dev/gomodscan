@@ -1,0 +1,370 @@
+# The devtools pin tasks. Same task-file syntax, namespace, selection,
+# and pin rules as format.toml in this directory -- and the same twist as
+# vendir.toml: devtools itself does not include this file. It is the
+# publisher, so it pins nothing and has no sites to move or read.
+#
+# A consumer pins devtools across these files, in three
+# syntaxes:
+#
+#   apm.yml                          root or packages/agents/<harness>#vX.Y.Z
+#   mise.toml                        go: guard-markdown and commit-lint tools, vX.Y.Z
+#   vendir.yml                       two `ref: vX.Y.Z` under the git url
+#   .pre-commit-config.yaml          rev: <sha>  # frozen: vX.Y.Z
+#   .github/workflows/*.y*ml         four `uses: ...@<sha> # vX.Y.Z`
+#   .github/renovate.json5           the preset extends, `...json5#<ref>`
+#
+# Most of those hold a commit SHA beside a tag comment, so moving a
+# version resolves a tag to a commit rather than substituting text. A
+# consumer takes both tasks by naming this file in its [task_config]
+# includes, and wires devtools:check-pins into its own lint aggregate.
+#
+# The workflow callers come from a glob rather than a list, so a fifth
+# one is covered the day it is added. The other four files are named
+# directly. Within a file the `tbhb-dev/devtools` reference selects the
+# site rather than a line number, carried either on the pinned line
+# itself or one key above it.
+
+# One command takes a consumer from one devtools release to the next.
+# It rewrites every site, then runs the follow-ons a bump implies: the
+# vendir sync that delivers the new payload, a lockfile refresh and
+# install for the tool pins that payload may have moved, and the APM
+# redeploy for the primitives. It finishes by running
+# devtools:check-pins, so a site the rewrite missed fails here rather
+# than in CI.
+#
+# The running instance is always the PRE-update version of this task. It
+# rewrites the pins, then syncs a payload that may carry a different
+# version of itself. That is inherent to a self-updating task: a change
+# to this body takes effect on the update AFTER the one that delivers it.
+#
+# Every devtools .github/<name>.json5 preset with a ref is a pin site.
+# Unpinned references stay unpinned. check-pins reports them as "unpinned",
+# so they disagree with versioned sites rather than silently following main.
+# SHA refs need a version comment beside them; the update maintains an
+# existing comment but leaves adding a missing one to a hand edit.
+#
+# `apm install` is deliberately not called directly. It merges hook
+# declarations into .claude/settings.json additively and never
+# reconciles, so a bare install leaves drift no later command clears.
+# devtools:apm-sync in apm.toml clears the hook state before reinstalling.
+#
+# The vendir sync runs under a scrubbed git environment for the reason
+# vendir.toml sets out at length: an inherited GIT_DIR redirects vendir's
+# throwaway `git init` onto the consuming repository. Nothing invokes
+# this task from a git hook today, which is exactly why the failure would
+# be a surprise.
+["devtools:update-pins"]
+description = "Move every tbhb-dev/devtools pin to <version> and run the follow-ons; check-pins flags prose mentions for manual edits (alias: devtools:update)"
+alias = "devtools:update"
+usage = 'arg "<version>" help="The devtools release to move to, e.g. v0.5.0"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+version=$usage_version
+case "$version" in v*) ;; *) version="v$version" ;; esac
+
+# Validate APM forms before changing any file.
+if [ -f apm.yml ]; then
+  awk '
+    /^[[:space:]]*-[[:space:]]*["\047]?tbhb-dev\/devtools/ && !/tbhb-dev\/devtools(\/packages\/agents\/(common|claude|codex|agy))?#v[0-9]+\.[0-9]+\.[0-9]+/ {
+      print "unsupported devtools APM pin: " $0 > "/dev/stderr"; bad = 1
+    }
+    END { exit bad }
+  ' apm.yml
+fi
+if ! grep -Eq '^"go:github.com/tbhb-dev/devtools/cmd/guard-markdown"[[:space:]]*=' mise.toml; then
+  echo 'declare "go:github.com/tbhb-dev/devtools/cmd/guard-markdown" in mise.toml [tools]' >&2
+  exit 1
+fi
+guard_version=$(sed -nE 's|^"go:github.com/tbhb-dev/devtools/cmd/guard-markdown"[[:space:]]*=[[:space:]]*"([^"]*)"|\1|p' mise.toml)
+if ! grep -Eq '^"go:github.com/tbhb-dev/devtools/cmd/commit-lint"[[:space:]]*=' mise.toml; then
+  printf '"go:github.com/tbhb-dev/devtools/cmd/commit-lint" = "%s"\n' "$guard_version" >&2
+  exit 1
+fi
+
+remote=https://github.com/tbhb-dev/devtools
+
+# ^{} dereferences an annotated tag to the commit it points at. devtools
+# publishes signed annotated tags, so the bare ref is the tag object and
+# pinning it would name something no `uses:` or `rev:` can resolve. The
+# fallback covers a lightweight tag, where no dereferenced ref exists.
+sha=$(git ls-remote "$remote" "refs/tags/$version^{}" | cut -f1)
+if [ -z "$sha" ]; then
+  sha=$(git ls-remote "$remote" "refs/tags/$version" | cut -f1)
+fi
+if [ -z "$sha" ]; then
+  echo "no tag $version at $remote" >&2
+  exit 1
+fi
+echo "$version resolves to $sha"
+
+# Every rewrite below goes through a temporary file rather than an
+# in-place flag. `sed -i` takes a mandatory backup suffix on BSD sed and
+# none on GNU sed, and this task runs wherever a consumer's developers
+# do -- a macOS machine without GNU coreutils ahead of it on PATH would
+# otherwise write a file named by the expression.
+edit() {
+  local file=$1
+  shift
+  "$@" "$file" > "$file.pins.tmp" && mv "$file.pins.tmp" "$file"
+}
+
+# The two tag-string sites and the preset extends are self-contained
+# lines, so each is one substitution.
+if [ -f apm.yml ]; then
+  edit apm.yml sed -E "s@(tbhb-dev/devtools(/packages/agents/(common|claude|codex|agy))?#)v[^[:space:]\"']+@\\1$version@"
+fi
+
+edit mise.toml sed -E "s|^(\"go:github.com/tbhb-dev/devtools/cmd/guard-markdown\"[[:space:]]*=[[:space:]]*)\"[^\"]*\"|\\1\"$version\"|"
+edit mise.toml sed -E "s|^(\"go:github.com/tbhb-dev/devtools/cmd/commit-lint\"[[:space:]]*=[[:space:]]*)\"[^\"]*\"|\\1\"$version\"|"
+edit mise.toml sed -E "s|^(\"go:github.com/tbhb-dev/devtools/cmd/agentrepo\"[[:space:]]*=[[:space:]]*)\"[^\"]*\"|\\1\"$version\"|"
+
+for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [ -f "$wf" ] || continue
+  edit "$wf" sed -E "s|(uses:[[:space:]]*tbhb-dev/devtools/[^@]*@)[0-9a-f]{7,40}([[:space:]]*#[[:space:]]*)v[^[:space:]]*|\\1$sha\\2$version|"
+done
+
+# Move existing refs on every devtools preset, then maintain their version
+# comments. References without a ref are left alone.
+if [ -f .github/renovate.json5 ]; then
+  edit .github/renovate.json5 sed -E "s|(github>tbhb-dev/devtools//\\.github/[^/\"]+\\.json5)(#[^\"]+)\"|\\1#$sha\"|"
+  edit .github/renovate.json5 sed -E "s|(github>tbhb-dev/devtools//\\.github/[^/\"]+\\.json5#[0-9a-f]{7,40}\",?[[:space:]]*//[[:space:]]*)v[^[:space:]]*|\\1$version|"
+fi
+
+# vendir.yml and .pre-commit-config.yaml carry the version on a line that
+# names no repository. Both are one key below the line that does, so the
+# rewrite tracks whether the block it is inside belongs to devtools and
+# clears that state as soon as it fires.
+if [ -f vendir.yml ]; then
+  awk -v ver="$version" '
+    /url:[[:space:]]*https:\/\/github\.com\/tbhb-dev\/devtools([[:space:]]|$)/ { in_block = 1 }
+    in_block && /^[[:space:]]*ref:[[:space:]]*/ {
+      sub(/ref:[[:space:]]*.*/, "ref: " ver)
+      in_block = 0
+    }
+    { print }
+  ' vendir.yml > vendir.yml.pins.tmp && mv vendir.yml.pins.tmp vendir.yml
+fi
+
+if [ -f .pre-commit-config.yaml ]; then
+  awk -v ver="$version" -v sha="$sha" '
+    /repo:[[:space:]]*https:\/\/github\.com\/tbhb-dev\/devtools([[:space:]]|$)/ { in_block = 1 }
+    in_block && /^[[:space:]]*rev:[[:space:]]*/ {
+      sub(/rev:[[:space:]]*.*/, "rev: " sha "  # frozen: " ver)
+      in_block = 0
+    }
+    { print }
+  ' .pre-commit-config.yaml > .pre-commit-config.yaml.pins.tmp && mv .pre-commit-config.yaml.pins.tmp .pre-commit-config.yaml
+fi
+
+# The payload arrives first: the lock and the install below have to see
+# the tool pins this sync delivers, not the ones it replaced.
+env -u GIT_DIR -u GIT_COMMON_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+    -u GIT_OBJECT_DIRECTORY vendir sync
+
+if [ -n "${DEVTOOLS_LOCK_PLATFORMS:-}" ]; then
+  mise lock --platform "$DEVTOOLS_LOCK_PLATFORMS"
+else
+  echo "DEVTOOLS_LOCK_PLATFORMS is unset, so the lockfiles were left alone" >&2
+  echo "         set it in the root mise.toml [env], then run 'mise lock --platform <list>'" >&2
+fi
+
+mise install
+mise run devtools:apm-sync
+
+# The verification runs against the payload the sync just delivered, so
+# it is the post-update task rather than this one. A release that
+# predates check-pins leaves nothing to run, which is a downgrade rather
+# than a bump and is reported instead of failing: the rewrite above
+# already succeeded.
+if mise tasks ls --all 2>/dev/null | grep -q '^devtools:check-pins[[:space:]]'; then
+  mise run devtools:check-pins
+else
+  echo "$version does not ship devtools:check-pins, so the rewrite went unverified" >&2
+fi
+'''
+
+# The gate over what update-pins writes, and over a hand-edit that moved
+# one site and not the rest.
+#
+# This is not belt-and-braces. Until the shared Renovate preset grew a
+# rule matching tbhb-dev/devtools across every manager, its grouping matched
+# by manager alone, so one release fanned out into three uncoordinated
+# pull requests with the apm.yml pin in none of them. That grouping rule
+# removes the cause; this gate catches whatever it misses -- a hand-edit,
+# a site a future manager still does not see, and any release where only
+# some of the group's pull requests were merged.
+#
+# Offline by design, so the lint aggregate stays hermetic. It proves the
+# sites agree with each other rather than that they agree with the
+# remote: every declared version has to match, and every SHA-pinned site
+# has to carry the same commit. Resolving a tag to a commit is
+# update-pins' job, and it writes both halves from one resolution.
+#
+# Finding no sites at all is a failure rather than a pass. A gate that
+# silently verifies nothing is the one outcome worse than a red one.
+["devtools:check-pins"]
+description = "Report the devtools version at every pin site and fail when they disagree"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Each record is: version <TAB> sha-or-dash <TAB> site. A version of "?"
+# marks a site whose pin was found but whose version could not be read,
+# which is a disagreement in its own right.
+read_sites() {
+  for f in mise.toml apm.yml vendir.yml .pre-commit-config.yaml \
+    .github/renovate.json5 .github/workflows/*.yml .github/workflows/*.yaml; do
+    [ -f "$f" ] || continue
+    awk -v file="$f" '
+      function emit(ver, sha) { printf "%s\t%s\t%s:%d\n", ver, sha, file, FNR }
+
+      # APM supports the root package and the published sub-packages.
+      /^[[:space:]]*-[[:space:]]*["\047]?tbhb-dev\/devtools/ && file == "apm.yml" {
+        v = "?"
+        if ($0 ~ /tbhb-dev\/devtools(\/packages\/agents\/(common|claude|codex|agy))?#v/) {
+          v = $0; sub(/.*tbhb-dev\/devtools(\/packages\/agents\/(common|claude|codex|agy))?#/, "", v); sub(/[[:space:]"\047].*$/, "", v)
+        }
+        emit(v, "-")
+      }
+
+      /^"go:github.com\/tbhb-dev\/devtools\/cmd\/(guard-markdown|commit-lint|agentrepo)"[[:space:]]*=/ {
+        v = $0; sub(/^[^=]*=[[:space:]]*"/, "", v); sub(/".*$/, "", v)
+        emit(v, "-")
+      }
+
+      # Reusable-workflow callers: SHA plus a trailing tag comment.
+      /uses:[[:space:]]*tbhb-dev\/devtools\// {
+        line = $0
+        s = line; sub(/.*@/, "", s); sub(/[^0-9a-f].*$/, "", s)
+        v = "?"
+        if (line ~ /#[[:space:]]*v/) {
+          v = line; sub(/.*#[[:space:]]*/, "", v); sub(/[[:space:]].*$/, "", v)
+        }
+        emit(v, s)
+      }
+
+      # The Renovate preset extends. A tag ref is the version outright; a
+      # SHA ref carries its version in the comment beside it, and without
+      # one the site still joins the SHA comparison.
+      /github>tbhb-dev\/devtools\/\/\.github\/[^\/"]+\.json5/ {
+        line = $0
+        ref = line
+        if (ref ~ /[^\/"]+\.json5#/) {
+          sub(/.*[^\/"]+\.json5#/, "", ref); sub(/".*$/, "", ref)
+        } else {
+          ref = ""
+        }
+        if (ref == "") { emit("unpinned", "-") }
+        else if (ref ~ /^v/) { emit(ref, "-") }
+        else {
+          v = "?"
+          if (line ~ /\/\/[[:space:]]*v/) {
+            v = line; sub(/.*\/\/[[:space:]]*/, "", v); sub(/[[:space:],].*$/, "", v)
+          }
+          emit(v, ref)
+        }
+      }
+
+      # vendir.yml and .pre-commit-config.yaml name the repository one key
+      # above the pin, so both are read with the block state the rewrite
+      # in update-pins keeps.
+      /(url|repo):[[:space:]]*https:\/\/github\.com\/tbhb-dev\/devtools([[:space:]]|$)/ { in_block = 1; next }
+      in_block && /^[[:space:]]*ref:[[:space:]]*/ {
+        v = $0; sub(/.*ref:[[:space:]]*/, "", v); sub(/[[:space:]].*$/, "", v)
+        emit(v, "-"); in_block = 0
+      }
+      in_block && /^[[:space:]]*rev:[[:space:]]*/ {
+        line = $0
+        s = line; sub(/.*rev:[[:space:]]*/, "", s); sub(/[^0-9a-f].*$/, "", s)
+        v = "?"
+        if (line ~ /frozen:[[:space:]]*v/) {
+          v = line; sub(/.*frozen:[[:space:]]*/, "", v); sub(/[[:space:]].*$/, "", v)
+        }
+        emit(v, s); in_block = 0
+      }
+    ' "$f"
+  done
+}
+
+sites=$(read_sites)
+if ! grep -Eq '^"go:github.com/tbhb-dev/devtools/cmd/agentrepo"[[:space:]]*=' mise.toml; then
+  echo 'recommend declaring "go:github.com/tbhb-dev/devtools/cmd/agentrepo" in mise.toml [tools] for bounded reviews' >&2
+fi
+
+if ! grep -Eq '^"go:github.com/tbhb-dev/devtools/cmd/guard-markdown"[[:space:]]*=' mise.toml; then
+  echo 'missing guard-markdown tool pin in mise.toml [tools]' >&2
+  exit 1
+fi
+guard_version=$(sed -nE 's|^"go:github.com/tbhb-dev/devtools/cmd/guard-markdown"[[:space:]]*=[[:space:]]*"([^"]*)"|\1|p' mise.toml)
+if ! grep -Eq '^"go:github.com/tbhb-dev/devtools/cmd/commit-lint"[[:space:]]*=' mise.toml; then
+  printf 'missing commit-lint tool pin in mise.toml [tools]; add exactly:\n' >&2
+  printf '"go:github.com/tbhb-dev/devtools/cmd/commit-lint" = "%s"\n' "$guard_version" >&2
+  exit 1
+fi
+
+if [ -z "$sites" ]; then
+  echo "no tbhb-dev/devtools pins found -- check-pins verified nothing" >&2
+  echo "         run it from a repository that vendors devtools" >&2
+  exit 1
+fi
+
+printf '%s\n' "$sites" | awk -F'\t' '{ printf "  %-10s %-42s %s\n", $1, $2, $3 }'
+
+versions=$(printf '%s\n' "$sites" | cut -f1 | sort -u)
+shas=$(printf '%s\n' "$sites" | cut -f2 | grep -v '^-$' | sort -u || true)
+
+# A disagreement reports each distinct value with the sites carrying it,
+# because the site that did not move is the whole answer and reading it
+# off the table above is the work this gate exists to save.
+report() {
+  local field=$1 label=$2 value
+  echo "devtools pins disagree on the $label:" >&2
+  for value in $3; do
+    echo "  $value" >&2
+    printf '%s\n' "$sites" | awk -F'\t' -v f="$field" -v v="$value" \
+      '$f == v { print "    " $3 }' >&2
+  done
+}
+
+version_count=$(printf '%s\n' "$versions" | wc -l)
+sha_count=$(printf '%s\n' "$shas" | wc -l)
+rc=0
+if [ "$version_count" -ne 1 ] || [ "$versions" = "?" ]; then
+  report 1 version "$versions"
+  rc=1
+fi
+if [ -n "$shas" ] && [ "$sha_count" -ne 1 ]; then
+  report 2 commit "$shas"
+  rc=1
+fi
+
+if [ "$rc" -ne 0 ]; then
+  echo "         run 'mise run devtools:update-pins <version>' to move every site together" >&2
+  exit 1
+fi
+
+# Search tracked working-tree text, including adapted configuration headers.
+# git grep returns 1 for no matches; other failures must still fail the gate.
+mentions=$(git grep -nI -o -E 'tbhb-dev/devtools[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+' --) || {
+  status=$?
+  [ "$status" -eq 1 ] || exit "$status"
+}
+if ! printf '%s\n' "$mentions" | awk -v pin="$guard_version" '
+  NF {
+    mention = $0
+    sub(/^.*tbhb-dev\/devtools[[:space:]]+/, "", mention)
+    if (mention != pin) {
+      site = $0; sub(/:tbhb-dev\/devtools[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+$/, "", site)
+      printf "%s: prose mentions %s; pinned %s (edit manually)\n", site, mention, pin > "/dev/stderr"
+      bad = 1
+    }
+  }
+  END { exit bad }
+'; then
+  exit 1
+fi
+
+echo "every devtools pin is on $versions"
+'''

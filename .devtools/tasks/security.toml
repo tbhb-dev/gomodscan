@@ -1,0 +1,49 @@
+# Shared security tasks. Same task-file syntax, namespace, selection,
+# and pin rules as format.toml in this directory -- in particular, no
+# tools block: gitleaks is pinned once in
+# .config/mise/conf.d/10-devtools-tools.toml, where Renovate can see
+# it. A task-scoped pin would override that table while staying outside
+# every automated bump, so the first bump would land green with the gate
+# still running the old scanner.
+#
+# One task holds this file today. It is separate from lint.toml because
+# a secret scan is not a lint: it reads git history rather than the
+# working tree, it costs minutes rather than seconds, and consumers wire
+# it into a release-prep or security aggregate rather than the inner
+# loop. The root mise.toml already keeps a security sub-aggregator
+# distinct from the lint gates, and this segmentation follows that
+# split.
+
+# gitleaks exits 0 when the underlying git invocation fails: it logs the
+# error, reports "0 commits scanned", then prints "no leaks found". A
+# repository it cannot resolve therefore reads as a clean scan. Assert
+# the walk reached at least one commit unless HEAD resolves and the
+# history has no patch content, which gitleaks does not count.
+# The output goes to a file rather than through a pipe so gitleaks' own
+# exit code survives.
+["devtools:gitleaks"]
+description = "Scan Git history for committed secrets"
+run = '''
+#!/usr/bin/env bash
+set -eu
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
+
+status=0
+gitleaks git --verbose --redact . >"$log" 2>&1 || status=$?
+cat "$log"
+
+if ! grep -qE '[1-9][0-9]* commits scanned' "$log"; then
+    if git rev-parse --verify HEAD >/dev/null 2>&1 &&
+        git log -p --format= HEAD >"$log" &&
+        ! grep -qE '^[+-]' "$log"; then
+        echo "Git history has no content to scan."
+        exit "$status"
+    fi
+    echo "gitleaks walked 0 commits, so this scan proves nothing." >&2
+    # shellcheck disable=SC2312 # pwd only supplies context for an already failed scan
+    echo "Check that the repository resolves from $(pwd)." >&2
+    exit 1
+fi
+exit "$status"
+'''

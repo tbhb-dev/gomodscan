@@ -1,0 +1,6 @@
+# Repository-owned skip list for working-tree scans by check-leaks.sh: one
+# anchored, case-sensitive ERE per line, matched against file paths. Staged,
+# range, and pre-push scans ignore it, so vendored dependency changes are
+# still checked at commit and push time. Existing private values in a
+# skipped tree go unreported by lint.
+^vendor/

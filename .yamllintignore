@@ -1,2 +1,15 @@
-vendor/
+.devtools/
+.config/mise/conf.d/
+.vale/
+.claude/
+apm_modules/
+bin/
+dist/
+tmp/
+logs/
+spikes/
 apm.lock.yaml
+vendir.lock.yml
+vendor/
+# Generated dependency locks from mise.
+.config/mise/locks/

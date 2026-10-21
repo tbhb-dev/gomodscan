@@ -1,6 +1,10 @@
 {
   "Exclude": [
     "^vendor/",
+    "^\\.devtools/",
+    "^\\.config/mise/",
+    "^\\.claude/",
+    "^\\.agents/",
     "^\\.vale/(Google|write-good|proselint|ai-tells.*)/",
     "^bin/",
     "^dist/",

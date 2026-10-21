@@ -1,0 +1,337 @@
+# gomodscan toolchain and tasks.
+
+[settings]
+lockfile = true
+idiomatic_version_file_enable_tools = []
+
+[tools]
+vendir = "0.46.2"
+apm = "0.33.0"
+shfmt = "3.14.1"
+jq = "1.8.2"
+"go:github.com/tbhb-dev/devtools/cmd/guard-markdown" = "v0.14.0"
+"go:github.com/tbhb-dev/devtools/cmd/commit-lint" = "v0.14.0"
+"go:github.com/tbhb-dev/devtools/cmd/agentrepo" = "v0.14.0"
+
+# The CI test matrix runs on Linux x64 and arm64, macOS arm64, and Windows x64,
+# and every workflow sets MISE_LOCKED, so the lockfiles cover all four.
+[env]
+DEVTOOLS_LOCK_PLATFORMS = "linux-x64,linux-arm64,macos-arm64,windows-x64"
+DEVTOOLS_GO_MODULES_MODE = "vendor"
+DEVTOOLS_GENERATED_PATHS = ".devtools/\n.config/mise/\nbin/\ndist/\ntmp/\n.vale/\nCHANGELOG.md"
+DEVTOOLS_PROSE_GLOB = "*.{md,go}"
+
+[task_config]
+includes = [
+  ".devtools/tasks/apm.toml",
+  ".devtools/tasks/fix.toml",
+  ".devtools/tasks/format.toml",
+  ".devtools/tasks/git-hooks.toml",
+  ".devtools/tasks/go.toml",
+  ".devtools/tasks/leaks.toml",
+  ".devtools/tasks/lint.toml",
+  ".devtools/tasks/pins.toml",
+  ".devtools/tasks/preapproval.toml",
+  ".devtools/tasks/security.toml",
+  ".devtools/tasks/toolchain.toml",
+  ".devtools/tasks/vendir.toml",
+]
+
+[tasks.bootstrap]
+description = "Sync the vendored payload, install the toolchain, and install git hooks"
+alias = "setup"
+run = [
+  "vendir sync",
+  "mise run install-toolchain",
+  "mise run install-tools",
+  "mise run devtools:prek-install",
+  "mise run devtools:install-pre-push-hook",
+]
+
+[tasks.install-toolchain]
+description = "Install the pinned toolchain from mise.toml and the vendored conf.d"
+run = "mise install"
+
+[tasks.install-tools]
+description = "Download the Vale style packages .vale.ini names"
+run = "vale sync"
+
+[tasks.lint-draft]
+extends = "devtools:lint-draft"
+
+[tasks.lint-pr-description]
+extends = "devtools:lint-pr-description"
+run = [
+  "bash .claude/skills/pr/scripts/validate-description.sh",
+  "vale --output=ai-tells-agent.tmpl PR_AGENTDESC.md",
+  "cspell --config .cspell.jsonc --no-summary --no-progress --no-gitignore PR_AGENTDESC.md",
+  "bash $DEVTOOLS_DIR/scripts/check-leaks.sh PR_AGENTDESC.md",
+]
+
+[tasks.lint-prose]
+extends = "devtools:lint-prose"
+
+[tasks.fix-prose-replacements]
+extends = "devtools:fix-prose-replacements"
+
+[tasks.lint-commit-msg]
+extends = "devtools:lint-commit-msg"
+
+[tasks.lint-squash-msg]
+extends = "devtools:lint-squash-msg"
+
+[tasks.lint]
+extends = "devtools:lint"
+run = [
+  "mise run devtools:check-vendored",
+  "mise run devtools:check-pins",
+  "mise run devtools:check-toolchain",
+  "mise run devtools:lint-apm",
+  "mise run devtools:lint-leaks",
+  "mise run devtools:check-pre-push-hook",
+  "mise run lint-prose",
+  "mise run devtools:lint-spelling",
+  "mise run devtools:lint-markdown",
+  "mise run devtools:lint-markdown-wrap",
+  "mise run devtools:lint-config",
+  "mise run devtools:lint-yaml",
+  "mise run devtools:lint-toml",
+  "mise run devtools:lint-mise",
+  "mise run devtools:lint-workflows",
+  "mise run devtools:lint-shell",
+  "mise run devtools:lint-shell-fmt",
+  "mise run devtools:lint-curl",
+  "mise run lint-editorconfig",
+  "mise run lint-go-all",
+  "mise run lint-go-fmt",
+]
+
+# The paths come from `git ls-files` rather than the checker's own discovery,
+# which also walks untracked files and would fail on any scratch file.
+[tasks.lint-editorconfig]
+description = "Check every tracked file against .editorconfig"
+run = "git ls-files -z | xargs -0 editorconfig-checker"
+
+[tasks.build]
+description = "Run devtools:build"
+run = "mise run devtools:build"
+
+[tasks.install]
+description = "Run devtools:install"
+run = "mise run devtools:install"
+
+[tasks.run]
+description = "Build and run gomodscan from source with the release ldflags"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+go run -ldflags "$(bash "$DEVTOOLS_DIR/scripts/go-ldflags.sh")" ./cmd/gomodscan "$@"
+'''
+
+[tasks.format-go]
+description = "Run devtools:format-go"
+run = "mise run devtools:format-go"
+
+[tasks.fix-go]
+description = "Run devtools:fix-go"
+run = "mise run devtools:fix-go"
+
+# The operator skills commit and pr hardcode `mise run test`, so the task stays as a wrapper.
+[tasks.test]
+description = "Run devtools:test-go"
+run = "mise run devtools:test-go"
+
+[tasks.test-go]
+description = "Run devtools:test-go"
+run = "mise run devtools:test-go"
+
+[tasks.test-go-race]
+description = "Run devtools:test-go-race"
+run = "mise run devtools:test-go-race"
+
+[tasks.lint-go-all]
+description = "Run devtools:lint-go-all"
+run = "mise run devtools:lint-go-all"
+
+[tasks.lint-go-arch]
+description = "Run devtools:lint-go-arch"
+run = "mise run devtools:lint-go-arch"
+
+[tasks.lint-go-deadcode]
+description = "Run devtools:lint-go-deadcode"
+run = "mise run devtools:lint-go-deadcode"
+
+[tasks.cover-go]
+description = "Run devtools:cover-go"
+run = "mise run devtools:cover-go"
+
+[tasks.cover-go-html]
+description = "Run devtools:cover-go-html"
+run = "mise run devtools:cover-go-html"
+
+[tasks.cover-go-cobertura]
+description = "Run devtools:cover-go-cobertura"
+run = "mise run devtools:cover-go-cobertura"
+
+[tasks.cover-go-binary]
+description = "Run devtools:cover-go-binary"
+run = "mise run devtools:cover-go-binary"
+
+[tasks.cover-go-merge]
+description = "Run devtools:cover-go-merge"
+run = "mise run devtools:cover-go-merge"
+
+[tasks.cover-go-check]
+description = "Run devtools:cover-go-check"
+run = "mise run devtools:cover-go-check"
+
+[tasks.vuln]
+description = "Run devtools:vuln"
+run = "mise run devtools:vuln"
+
+[tasks.vuln-sarif]
+description = "Run devtools:vuln-sarif"
+run = "mise run devtools:vuln-sarif"
+
+[tasks.mutate-go]
+description = "Run devtools:mutate-go"
+run = "mise run devtools:mutate-go"
+
+[tasks.mutate-go-all]
+description = "Run devtools:mutate-go-all"
+run = "mise run devtools:mutate-go-all"
+
+[tasks.fuzz-go]
+description = "Run devtools:fuzz-go"
+run = "mise run devtools:fuzz-go"
+
+# The fix-pr skill routes fuzz failures to `mise run fuzz`.
+[tasks.fuzz]
+description = "Run every native Go fuzz target for FUZZ_TIME each (default 30s)"
+run = "mise run fuzz-go"
+
+[tasks.tidy]
+description = "Run devtools:tidy"
+run = "mise run devtools:tidy"
+
+[tasks.verify]
+description = "Run devtools:verify"
+run = "mise run devtools:verify"
+
+[tasks.vendor]
+description = "Run devtools:vendor"
+run = "mise run devtools:vendor"
+
+# Local workaround for tbhb-dev/devtools#289: detect untracked vendor files.
+# Capture them before regeneration too, since go mod vendor removes stray files.
+# Remove this task and point at devtools:vendor-check once that issue closes and that task does the same.
+[tasks.vendor-check]
+description = "Check that vendor/, go.mod, and go.sum are in sync"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+untracked_before=$(git ls-files --others --exclude-per-directory=.gitignore -- go.mod go.sum vendor/)
+go mod tidy
+go mod vendor
+untracked_after=$(git ls-files --others --exclude-per-directory=.gitignore -- go.mod go.sum vendor/)
+if [[ -n $untracked_before || -n $untracked_after ]] || ! git diff --exit-code -- go.mod go.sum vendor/; then
+  printf '%s\n' "$untracked_before" "$untracked_after" | sort -u >&2
+  echo "vendor drift detected; run 'mise run vendor' and commit" >&2
+  exit 1
+fi
+'''
+
+# Local workaround for tbhb-dev/devtools#283: the payload has no Go format check, only the
+# in-place devtools:format-go. Remove this task once devtools ships a check-only formatter task.
+[tasks.lint-go-fmt]
+description = "Check Go formatting"
+run = "golangci-lint fmt --diff ./cmd/... ./internal/..."
+
+# gomodscan scans itself from source, so the scan exercises the code under
+# review rather than a released binary. devtools:gomodscan runs `go tool
+# gomodscan`, which needs gomodscan as a tool dependency of its own module.
+#
+# The tasks build the binary first because `go run` reports every non-zero exit
+# of the program, and every compile failure, as status 1, which would hide a
+# scanner failure behind the findings status.
+[tasks.scan]
+description = "Scan each vendored module for supply-chain risk from source"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+go build -ldflags "$(bash "$DEVTOOLS_DIR/scripts/go-ldflags.sh")" -o "$tmp/gomodscan" ./cmd/gomodscan
+"$tmp/gomodscan"
+'''
+
+# The security workflow uploads this report to Code Scanning. A findings exit
+# (1) passes, since Code Scanning surfaces severity downstream, but a tool
+# failure (exit 2 or above) still fails the task.
+[tasks.scan-sarif]
+description = "Write the gomodscan findings as SARIF to <file>"
+usage = 'arg "<file>"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+go build -ldflags "$(bash "$DEVTOOLS_DIR/scripts/go-ldflags.sh")" -o "$tmp/gomodscan" ./cmd/gomodscan
+rc=0
+"$tmp/gomodscan" -format sarif > "$usage_file" || rc=$?
+if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+if [ ! -s "$usage_file" ]; then
+  echo "scan-sarif: $usage_file is missing or empty" >&2
+  exit 1
+fi
+'''
+
+# tidy normalizes go.mod and go.sum first so the rest of the gate sees the
+# canonical dependency set; vendor-check at the end catches any drift the rest
+# of the gate introduced.
+[tasks.check]
+description = "Fast quality bar for save-time and routine pre-push runs"
+run = [
+  "mise run tidy",
+  "mise run verify",
+  "mise run lint",
+  "mise run test",
+  "mise run vuln",
+  "mise run vendor-check",
+]
+
+# Layers the race detector, the fuzz sweep, the self-scan, and the
+# full-history gitleaks scan on top of check.
+[tasks.check-all]
+description = "Comprehensive quality bar for release-prep sweeps"
+run = [
+  "mise run check",
+  "mise run test-go-race",
+  "mise run fuzz",
+  "mise run scan",
+  "mise run devtools:gitleaks",
+]
+
+[tasks.security]
+description = "Run every security scanner in one pass"
+run = ["mise run vuln", "mise run scan", "mise run devtools:gitleaks"]
+
+# `cog changelog` emits the release sections and nothing else, so this writes
+# the preamble `cog bump` splits the file on: the H1, the pointer to the spec,
+# and the `- - -` line, with the newest section's marker directly under it.
+# The trailing trim exists because `cog changelog` closes its output with two
+# blank lines.
+[tasks.generate-changelog]
+description = "Generate the full CHANGELOG.md from Conventional Commit history"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+{
+  echo "# Changelog"
+  echo
+  echo "All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines."
+  echo
+  echo "- - -"
+  cog changelog | perl -0pe 's/\n+\z/\n/'
+} > CHANGELOG.md
+'''

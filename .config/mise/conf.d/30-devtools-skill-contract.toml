@@ -1,0 +1,37 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+# The task names and interfaces the published skills call. Consumers
+# extend these templates under the unprefixed names. Draft lint and
+# replacements have payload-owned defaults; aggregate tasks and prose
+# scope remain consumer policy.
+#
+#   [tasks.lint-draft]
+#   extends = "devtools:lint-draft"
+
+[task_templates."devtools:lint-commit-msg"]
+description = "Pre-validate a drafted commit message against the commit-msg gates"
+run = 'bash "$DEVTOOLS_DIR/scripts/lint-commit-msg.sh"'
+
+[task_templates."devtools:lint-squash-msg"]
+description = "Pre-validate a drafted squash commit message against the commit-msg gates"
+run = "prek run --stage commit-msg --commit-msg-filename SQUASH_AGENTMSG"
+
+[task_templates."devtools:lint-pr-description"]
+description = "Validate a drafted pull request description"
+
+[task_templates."devtools:lint"]
+description = "Run every linter that operates on the source tree"
+
+[task_templates."devtools:lint-prose"]
+description = "Lint prose via vale"
+usage = 'arg "<paths>..." default="."'
+run = "mise run devtools:lint-source-files -- prose $usage_paths"
+
+[task_templates."devtools:lint-draft"]
+description = "Lint one drafted document through every prose gate at once"
+usage = 'arg "<file>"'
+run = 'bash "$DEVTOOLS_DIR/scripts/lint-draft.sh" "$usage_file"'
+
+[task_templates."devtools:fix-prose-replacements"]
+description = "Apply every vale finding that carries its own replacement"
+usage = 'arg "<file>"'
+run = 'uv run --script "$DEVTOOLS_DIR/scripts/fix_prose_replacements.py" "$usage_file"'

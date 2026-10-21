@@ -1,0 +1,33 @@
+---
+# The shared devtools payload, vendored into the two directories vendir
+# owns outright: anything undeclared inside them is deleted on sync, so
+# nothing else may write there. Repo-owned mise config lives in
+# mise.toml, which vendir never touches and which overrides the conf.d
+# drop-ins for both tools and tasks.
+#
+# vendir.lock.yml records the resolved commit SHA beside the ref, which
+# keeps a sync reproducible after a tag moves. `mise run
+# devtools:check-vendored` is the drift gate over both directories, and
+# `mise run devtools:update-pins <version>` moves both refs together with
+# the other pin sites.
+apiVersion: vendir.k14s.io/v1alpha1
+kind: Config
+directories:
+  - path: .config/mise/conf.d
+    contents:
+      - path: .
+        git:
+          url: https://github.com/tbhb-dev/devtools
+          ref: v0.14.0
+        includePaths:
+          - .config/mise/conf.d/**
+        newRootPath: .config/mise/conf.d
+  - path: .devtools
+    contents:
+      - path: .
+        git:
+          url: https://github.com/tbhb-dev/devtools
+          ref: v0.14.0
+        includePaths:
+          - .devtools/**
+        newRootPath: .devtools

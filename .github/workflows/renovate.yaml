@@ -1,17 +1,21 @@
 ---
-# Self-hosted Renovate, delegated to the shared reusable workflow in
-# proofhouse/github-actions so this repo no longer carries the App-token
-# mint and renovate-action wiring itself. The reusable workflow checks out
-# this repo's tree, reads .github/renovate.json5, and authenticates as the
-# proofhouse-renovate[bot] GitHub App. `secrets: inherit` forwards the
-# RENOVATE_CLIENT_ID / RENOVATE_PRIVATE_KEY org secrets this repo inherits,
-# which the App-token step needs.
+# Self-hosted Renovate. Authenticates as the tbhb-dev-renovate[bot]
+# GitHub App so commits get a DCO sign-off matching the committer (the
+# stock Mend hosted App commits as renovate[bot], which can't match this
+# repo's gitAuthor + gitSignOff pair).
 #
-# The previous standalone version mounted the host docker socket and ran a
-# custom entrypoint to give the gomodTidy post-update step a Go sidecar.
-# The shared workflow runs Renovate plainly, so gomodTidy now relies on
-# Renovate's default binarySource=install: the Go toolchain installs inside
-# the Renovate container, no socket required.
+# Delegates to the shared reusable workflow in tbhb-dev/devtools,
+# which mints the App token, checks out this repo, and runs the pinned
+# Renovate image against this repo's .github/renovate.json5. Pinned by commit
+# SHA; the trailing tag comment marks the matching release for Renovate.
+#
+# Execution depends on the tbhb-dev-renovate App credentials reaching the
+# run: RENOVATE_CLIENT_ID and RENOVATE_PRIVATE_KEY must be Actions secrets
+# visible to this repository, and the App must be installed on it.
+#
+# This workflow runs on a schedule and on demand only. A push or pull
+# request trigger would start a Renovate run, with the App credentials, for
+# every change to the repository.
 name: Renovate
 
 on:
@@ -33,13 +37,12 @@ permissions:
 
 jobs:
   renovate:
-    name: Run self-hosted Renovate
     permissions:
       contents: read
-    uses: proofhouse/github-actions/.github/workflows/renovate.yaml@131c527df05799916f98d8c4b26eb225dbfc7845 # v0.4.0
-    secrets: inherit
+    # yamllint disable-line rule:line-length
+    uses: tbhb-dev/devtools/.github/workflows/renovate.yaml@830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9 # v0.14.0
     with:
-      # On a schedule trigger the `inputs` context is empty; the shared
-      # workflow forces DEBUG for schedule events regardless, so the
-      # `|| false` fallback only needs to keep this a valid boolean.
       renovate_log_level_debug: ${{ inputs.renovate_log_level_debug || false }}
+    secrets:
+      RENOVATE_CLIENT_ID: ${{ secrets.RENOVATE_CLIENT_ID }}
+      RENOVATE_PRIVATE_KEY: ${{ secrets.RENOVATE_PRIVATE_KEY }}
