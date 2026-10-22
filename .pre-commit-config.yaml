@@ -49,7 +49,7 @@ repos:
   # runs `go tool gomodscan`, and this module has no tool directive for
   # itself, so the local scan hook below runs the scanner from source.
   - repo: https://github.com/tbhb-dev/devtools
-    rev: 830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9  # frozen: v0.14.0
+    rev: 1dde4f53da5fcbee3876dc2cb67da59e52b63479  # frozen: v0.15.0
     hooks:
       - id: commit-trailers
       - id: commitlint

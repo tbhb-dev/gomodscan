@@ -5,7 +5,7 @@ description: Shared agent tools for gomodscan
 target: [claude, codex]
 dependencies:
   apm:
-    - tbhb-dev/devtools/packages/agents/claude#v0.14.0
-    - tbhb-dev/devtools/packages/agents/codex#v0.14.0
-    - tbhb-dev/devtools/packages/agents/common#v0.14.0
+    - tbhb-dev/devtools/packages/agents/claude#v0.15.0
+    - tbhb-dev/devtools/packages/agents/codex#v0.15.0
+    - tbhb-dev/devtools/packages/agents/common#v0.15.0
   mcp: []
