@@ -7,7 +7,7 @@
 # here guards against new code shipping with no test reach at all.
 
 profile: coverage.out
-local-prefix: github.com/proofhouse/gomodscan
+local-prefix: github.com/tbhb-dev/gomodscan
 
 threshold:
   file: 75

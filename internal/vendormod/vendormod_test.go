@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package vendormod_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/vendormod"
+	"github.com/tbhb-dev/gomodscan/internal/vendormod"
 )
 
 func TestParse(t *testing.T) {
@@ -173,13 +174,19 @@ func TestRead(t *testing.T) {
 		}, got)
 	})
 
-	t.Run("wraps open errors for a missing modules.txt", func(t *testing.T) {
+	t.Run("names the missing modules.txt path once", func(t *testing.T) {
 		t.Parallel()
-		got, err := vendormod.Read(filepath.Join(t.TempDir(), "absent"))
+		modroot := filepath.Join(t.TempDir(), "absent")
+		path := filepath.Join(modroot, "vendor", "modules.txt")
+		_, openErr := os.Open(path)
+		require.Error(t, openErr)
+
+		got, err := vendormod.Read(modroot)
 		require.Error(t, err)
 		assert.Nil(t, got)
-		assert.Contains(t, err.Error(), "open ")
-		assert.Contains(t, err.Error(), "modules.txt")
+		require.ErrorIs(t, err, fs.ErrNotExist)
+		assert.Equal(t, "vendor manifest: "+openErr.Error(), err.Error())
+		assert.Equal(t, 1, strings.Count(err.Error(), path))
 	})
 
 	t.Run("wraps parse errors when a line overflows the scanner cap", func(t *testing.T) {

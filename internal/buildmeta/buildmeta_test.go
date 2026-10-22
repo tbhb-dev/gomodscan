@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package buildmeta_test
 
@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/buildmeta"
+	"github.com/tbhb-dev/gomodscan/internal/buildmeta"
 )
 
 func TestGetReturnsPackageVars(t *testing.T) {

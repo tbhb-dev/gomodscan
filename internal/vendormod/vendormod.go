@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Package vendormod enumerates the modules a project vendors.
 // Both depscan and malscan call [Read] to load the dependency set
@@ -53,7 +53,9 @@ func Read(modroot string) ([]Module, error) {
 	path := filepath.Join(modroot, "vendor", "modules.txt")
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		// The *fs.PathError from os.Open already names the operation
+		// and the path, so the wrap adds neither.
+		return nil, fmt.Errorf("vendor manifest: %w", err)
 	}
 	defer f.Close()
 	mods, err := Parse(f)

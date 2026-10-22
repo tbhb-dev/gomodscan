@@ -18,18 +18,19 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/proofhouse/gomodscan)
+        - prefix(github.com/tbhb-dev/gomodscan)
         - blank
         - dot
         - alias
         - localmodule
       custom-order: true
     gofumpt:
-      module-path: github.com/proofhouse/gomodscan
-      extra-rules: true
+      module-path: github.com/tbhb-dev/gomodscan
+      extra:
+        group-params: true
     goimports:
       local-prefixes:
-        - github.com/proofhouse/gomodscan
+        - github.com/tbhb-dev/gomodscan
     golines:
       max-len: 120
 
@@ -193,7 +194,7 @@ linters:
     goheader:
       template: |-
         SPDX-License-Identifier: Apache-2.0
-        Copyright Authors of Proofhouse
+        Copyright Tony Burns
 
     govet:
       enable-all: true

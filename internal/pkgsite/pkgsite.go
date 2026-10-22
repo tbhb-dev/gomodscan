@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Package pkgsite provides a minimal client for the public pkg.go.dev
-// /v1beta API documented at https://go.dev/blog/pkgsite-api. The
+// /v1 API documented at https://go.dev/blog/pkgsite-api. The
 // depscan tool uses it to retrieve per-version deprecation and
 // retraction status for each vendored module.
 //
-// The client wraps GET /v1beta/versions/{module} and decodes the
+// The client wraps GET /v1/versions/{module} and decodes the
 // [ModuleVersion] records. It walks the nextPageToken chain, so the
-// caller sees the full version list. Other v1beta endpoints
+// caller sees the full version list. Other v1 endpoints
 // (package, search, vulns) stay out of scope.
 //
 // Field shapes mirror golang/pkgsite's
@@ -28,11 +28,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/proofhouse/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
 )
 
 const (
-	// DefaultBaseURL points at the public pkg.go.dev v1beta host.
+	// DefaultBaseURL points at the public pkg.go.dev v1 API host.
 	// Tests override via [Client.BaseURL].
 	DefaultBaseURL = "https://pkg.go.dev"
 
@@ -40,7 +40,7 @@ const (
 	// reference pkgsite-cli client sets a similar self-describing
 	// header. A descriptive value lets the upstream operator tell
 	// these requests apart from a generic Go HTTP client.
-	DefaultUserAgent = "gomodscan/1 (+https://github.com/proofhouse/gomodscan)"
+	DefaultUserAgent = "gomodscan/1 (+https://github.com/tbhb-dev/gomodscan)"
 
 	// defaultPageLimit caps items per page. The API enforces its
 	// own ceiling. This value bounds the response size for modules
@@ -80,7 +80,7 @@ var defaultHTTPClient = &http.Client{
 }
 
 // ModuleVersion mirrors the entry shape returned by
-// /v1beta/versions/{module}. Field names match the JSON keys the
+// /v1/versions/{module}. Field names match the JSON keys the
 // upstream OpenAPI spec documents.
 type ModuleVersion struct {
 	ModulePath        string    `json:"modulePath"`
@@ -95,7 +95,7 @@ type ModuleVersion struct {
 	RetractionReason  string    `json:"retractionReason"`
 }
 
-// Client fetches module-version metadata from a pkg.go.dev v1beta
+// Client fetches module-version metadata from a pkg.go.dev v1
 // server. The zero value targets the public host with a 30 s
 // timeout. Tests inject an in-memory server through BaseURL.
 type Client struct {
@@ -164,6 +164,7 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 		return nil, err
 	}
 
+	ctx, attempts := retryhttp.WithAttempts(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request for %s: %w", module, err)
@@ -173,7 +174,7 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", reqURL, err)
+		return nil, &retryhttp.Error{Err: fmt.Errorf("GET %s: %w", reqURL, err), Attempts: attempts()}
 	}
 	defer resp.Body.Close()
 
@@ -181,13 +182,21 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 	case http.StatusOK:
 		var p page
 		if decErr := json.NewDecoder(resp.Body).Decode(&p); decErr != nil {
-			return nil, fmt.Errorf("decode %s: %w", module, decErr)
+			return nil, &retryhttp.Error{
+				Err:        fmt.Errorf("decode %s: %w", module, decErr),
+				Attempts:   attempts(),
+				LastStatus: resp.StatusCode,
+			}
 		}
 		return &p, nil
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, module)
 	default:
-		return nil, fmt.Errorf("%w: GET %s: status %d", ErrUnexpectedStatus, reqURL, resp.StatusCode)
+		return nil, &retryhttp.Error{
+			Err:        fmt.Errorf("%w: GET %s: status %d", ErrUnexpectedStatus, reqURL, resp.StatusCode),
+			Attempts:   attempts(),
+			LastStatus: resp.StatusCode,
+		}
 	}
 }
 
@@ -196,7 +205,7 @@ func (c *Client) buildURL(module, token string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse base URL %q: %w", c.baseURL(), err)
 	}
-	u := base.JoinPath("v1beta", "versions", module)
+	u := base.JoinPath("v1", "versions", module)
 	q := u.Query()
 	q.Set("limit", strconv.Itoa(defaultPageLimit))
 	if token != "" {

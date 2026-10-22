@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 package findings_test
 
@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/proofhouse/gomodscan/internal/findings"
+	"github.com/tbhb-dev/gomodscan/internal/findings"
 )
 
 func TestWriteText(t *testing.T) {
@@ -158,7 +158,7 @@ func TestWriteSARIF_EmitsValidV210Report(t *testing.T) {
 
 	run0 := decoded.Runs[0]
 	assert.Equal(t, "depscan", run0.Tool.Driver.Name)
-	assert.Equal(t, "https://github.com/proofhouse/gomodscan", run0.Tool.Driver.InformationURI)
+	assert.Equal(t, "https://github.com/tbhb-dev/gomodscan", run0.Tool.Driver.InformationURI)
 	require.Len(t, run0.Tool.Driver.Rules, 1)
 	assert.Equal(t, "retracted", run0.Tool.Driver.Rules[0].ID)
 

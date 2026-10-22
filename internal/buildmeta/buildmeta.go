@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Package buildmeta carries build-time information injected via ldflags, with
 // a fallback that consults the runtime/debug build info when no ldflags apply
@@ -13,9 +13,9 @@ import "runtime/debug"
 // signal to consult runtime/debug rather than as a real version.
 const devFallback = "DEV"
 
-// Build-time variables. The Justfile and goreleaser config both set these
-// via -ldflags, passing the argument
-// "-X github.com/proofhouse/gomodscan/internal/buildmeta.<Var>=<value>" for
+// Build-time variables. .devtools/scripts/go-ldflags.sh, which
+// `mise run build` uses, sets these via -ldflags, passing the argument
+// "-X github.com/tbhb-dev/gomodscan/internal/buildmeta.<Var>=<value>" for
 // each one.
 // The defaults below apply when the build passes no ldflags.
 //

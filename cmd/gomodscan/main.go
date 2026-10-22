@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Command gomodscan scans the modules a Go project vendors. One pass
 // covers two supply chain concerns. The first is a dependency that
@@ -9,12 +9,12 @@
 //
 // Usage:
 //
-//	gomodscan [-modroot dir] [-format text|sarif] [-no-cache]
-//	          [-cache-dir dir] [-version]
+//	gomodscan [-modroot dir] [-format text|sarif] [-o file]
+//	          [-summary-json file] [-no-cache] [-cache-dir dir] [-version]
 //
 // gomodscan reads vendor/modules.txt under -modroot (defaults to the
 // current working directory) to list the vendored module set.
-// For each module it queries pkg.go.dev /v1beta/versions/{module} for
+// For each module it queries pkg.go.dev /v1/versions/{module} for
 // deprecation and retraction status, plus the OSV /v1/query endpoint
 // for malicious-package advisories under the MAL- ID prefix. Modules
 // replaced to a local path fall outside both registries and get
@@ -27,29 +27,54 @@
 // The -format flag selects the finding emitter. Text output (the
 // default) follows the unified shape documented in the [findings]
 // package. SARIF output emits a v2.1.0 report suitable for ingestion by
-// GitHub Code Scanning.
+// GitHub Code Scanning. The findings go to stdout unless -o (long form
+// -output) names a file. gomodscan writes that file, and the -summary-json
+// file, through a temporary file in the same directory that it then renames
+// into place, so a reader never sees a partial file. Both files end up mode
+// 0644, less any bits the process's file creation mask clears.
 //
-// [findings]: https://pkg.go.dev/github.com/proofhouse/gomodscan/internal/findings
+// The -summary-json flag writes a machine-readable summary of the run on
+// every exit status. The JSON object, at schema 1, carries the build version,
+// the modules, findings, and unevaluated counts, an errors array, and an error
+// field. Each errors entry records one registry lookup that still failed after
+// the retries: the module path and version, the lookup ("versions" for
+// pkg.go.dev or "vulns" for OSV), the error message, the attempts, and the
+// last HTTP status, which reads 0 when the final attempt got no response. The
+// top-level error stays null once the scan runs. When the scan never starts,
+// because of a bad argument or an unreadable vendor/modules.txt, error holds
+// the reason and the counts stay 0.
+//
+// gomodscan exits 0 when every module came back clean and 1 when at least one
+// finding surfaced. It exits 2 when any module couldn't be evaluated after the
+// retries, or on any other operational failure (bad arguments, an unreadable
+// vendor/modules.txt, a failed output write). An unevaluated module outranks
+// findings, so a run with both exits 2.
+//
+// [findings]: https://pkg.go.dev/github.com/tbhb-dev/gomodscan/internal/findings
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/proofhouse/gomodscan/internal/buildmeta"
-	"github.com/proofhouse/gomodscan/internal/cachehttp"
-	"github.com/proofhouse/gomodscan/internal/exitcode"
-	"github.com/proofhouse/gomodscan/internal/findings"
-	"github.com/proofhouse/gomodscan/internal/osv"
-	"github.com/proofhouse/gomodscan/internal/pkgsite"
-	"github.com/proofhouse/gomodscan/internal/retryhttp"
-	"github.com/proofhouse/gomodscan/internal/vendormod"
+	"github.com/tbhb-dev/gomodscan/internal/buildmeta"
+	"github.com/tbhb-dev/gomodscan/internal/cachehttp"
+	"github.com/tbhb-dev/gomodscan/internal/exitcode"
+	"github.com/tbhb-dev/gomodscan/internal/findings"
+	"github.com/tbhb-dev/gomodscan/internal/osv"
+	"github.com/tbhb-dev/gomodscan/internal/pkgsite"
+	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
+	"github.com/tbhb-dev/gomodscan/internal/vendormod"
 )
 
 const (
@@ -68,6 +93,24 @@ const (
 	// malware rather than as a known vulnerability. The OSSF
 	// malicious-packages dataset reserves this prefix.
 	maliciousIDPrefix = "MAL-"
+
+	// formatText and formatSARIF name the -format values.
+	formatText  = "text"
+	formatSARIF = "sarif"
+
+	// summarySchema versions the -summary-json document shape. Bump it on
+	// any change a consumer parsing the summary would notice.
+	summarySchema = 1
+
+	// These name the registry call a summary errors entry records: the
+	// pkg.go.dev versions lookup and the OSV query.
+	lookupVersions = "versions"
+	lookupVulns    = "vulns"
+
+	// reportPerm is the mode the -o and -summary-json files open with, before
+	// the process's file creation mask applies, so other users can read them
+	// as they could a file a shell redirect created.
+	reportPerm = 0o644
 )
 
 // errUnknownFormat reports that the -format flag carried a value
@@ -165,6 +208,62 @@ func (f finding) message() string {
 	}
 }
 
+// options carries the flags that shape a scan and where its results go.
+type options struct {
+	modroot     string
+	format      string
+	output      string
+	summaryJSON string
+}
+
+// lookupError records one registry lookup that still failed for a module
+// after the retries. Lookup names the registry call. Attempts and LastStatus
+// come from the [retryhttp.Error] the client returns, and stay 0 for a
+// failure that never reached the transport. A LastStatus of 0 also means the
+// last attempt got no HTTP response.
+type lookupError struct {
+	Module     string `json:"module"`
+	Lookup     string `json:"lookup"`
+	Error      string `json:"error"`
+	Attempts   int    `json:"attempts"`
+	LastStatus int    `json:"last_status"`
+}
+
+// summary is the -summary-json document. Modules counts the vendored
+// modules, Unevaluated the ones with at least one failed lookup, and Errors
+// holds every failed lookup (up to two per module, one per registry). Error
+// holds the reason a run stopped before its scan, and stays nil otherwise.
+type summary struct {
+	Schema      int           `json:"schema"`
+	Version     string        `json:"version"`
+	Modules     int           `json:"modules"`
+	Findings    int           `json:"findings"`
+	Unevaluated int           `json:"unevaluated"`
+	Errors      []lookupError `json:"errors"`
+	Error       *string       `json:"error"`
+}
+
+// newSummary starts the summary of a run over the given number of modules.
+func newSummary(modules int) *summary {
+	return &summary{
+		Schema:  summarySchema,
+		Version: buildmeta.Get().Version,
+		Modules: modules,
+		Errors:  []lookupError{},
+	}
+}
+
+// addError logs one failed lookup for mod to errOut and records it.
+func (s *summary) addError(errOut io.Writer, mod vendormod.Module, lookup string, err error) {
+	fmt.Fprintf(errOut, "%s: %s: %v\n", toolName, mod.Path, err)
+	le := lookupError{Module: mod.Path + "@" + mod.Version, Lookup: lookup, Error: err.Error()}
+	if re, ok := errors.AsType[*retryhttp.Error](err); ok {
+		le.Attempts = re.Attempts
+		le.LastStatus = re.LastStatus
+	}
+	s.Errors = append(s.Errors, le)
+}
+
 func reasonSentence(r string) string {
 	if r == "" {
 		return "No reason recorded."
@@ -184,8 +283,17 @@ func main() {
 func realMain(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet(toolName, flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	modroot := fs.String("modroot", "", "module root to scan (defaults to cwd)")
-	format := fs.String("format", "text", "output format: text or sarif")
+	var opts options
+	fs.StringVar(&opts.modroot, "modroot", "", "module root to scan (defaults to cwd)")
+	fs.StringVar(&opts.format, "format", formatText, "output format: text or sarif")
+	fs.StringVar(&opts.output, "o", "", "write the findings to `file` instead of stdout")
+	fs.StringVar(&opts.output, "output", "", "long form of -o: write the findings to `file`")
+	fs.StringVar(
+		&opts.summaryJSON,
+		"summary-json",
+		"",
+		"write a JSON summary of the run to `file` on every exit status (schema 1)",
+	)
 	noCache := fs.Bool("no-cache", false, "disable the on-disk pkg.go.dev response cache")
 	cacheDir := fs.String(
 		"cache-dir",
@@ -194,7 +302,9 @@ func realMain(args []string, out, errOut io.Writer) int {
 	)
 	showVersion := fs.Bool("version", false, "print version information and exit")
 	if err := fs.Parse(args); err != nil {
-		return exitcode.ToolFailure
+		// The flag set has already printed err. The summary path only counts
+		// when its flag came before the bad argument.
+		return abort(opts.summaryJSON, err, errOut)
 	}
 
 	if *showVersion {
@@ -205,8 +315,7 @@ func realMain(args []string, out, errOut io.Writer) int {
 
 	rc, err := run(
 		context.Background(),
-		*modroot,
-		*format,
+		opts,
 		newVersionsClient(*noCache, *cacheDir),
 		&osv.Client{},
 		out,
@@ -245,58 +354,188 @@ func newVersionsClient(noCache bool, cacheDir string) *pkgsite.Client {
 	return &pkgsite.Client{HTTPClient: &http.Client{Transport: transport}}
 }
 
-// run reads the vendored module set once and runs both scanners over
-// it, accumulating findings in module order (the deprecated check
-// before the malicious check for each module). A per-module lookup
-// error logs to errOut and drops that scanner's result for that module
-// without failing the run; only a failure to read the module set or
-// emit the findings returns a tool-failure code.
+// run reads the vendored module set once, runs both scanners over it, and
+// reports the result. A per-module lookup error logs to errOut and drops
+// that scanner's result for that module, then marks the module unevaluated,
+// which turns the run into a tool failure once the findings and the stderr
+// summary are out. An unknown -format, a failure to read the module set, emit
+// the findings, or write the -summary-json file also returns a tool-failure
+// code.
 func run(
 	ctx context.Context,
-	modroot, format string,
+	opts options,
 	versions versionsClient,
 	vulns vulnsClient,
 	out, errOut io.Writer,
 ) (int, error) {
-	mods, err := vendormod.Read(modroot)
+	if err := checkFormat(opts.format); err != nil {
+		return abort(opts.summaryJSON, err, errOut), err
+	}
+	mods, err := vendormod.Read(opts.modroot)
 	if err != nil {
-		return exitcode.ToolFailure, fmt.Errorf("read vendored modules: %w", err)
+		err = fmt.Errorf("read vendored modules: %w", err)
+		return abort(opts.summaryJSON, err, errOut), err
 	}
 
+	hits, sum := scan(ctx, mods, versions, vulns, errOut)
+	rc, err := report(opts, hits, sum, out, errOut)
+	if opts.summaryJSON != "" {
+		if sumErr := writeSummary(opts.summaryJSON, sum); sumErr != nil {
+			fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, sumErr)
+			return exitcode.ToolFailure, err
+		}
+	}
+	return rc, err
+}
+
+// checkFormat rejects a -format value outside the {text, sarif} allowlist
+// before the scan starts, so a bad flag costs no registry lookups.
+func checkFormat(format string) error {
+	if format != formatText && format != formatSARIF {
+		return fmt.Errorf("%w: %q", errUnknownFormat, format)
+	}
+	return nil
+}
+
+// abort ends a run that stopped before its scan began. When a -summary-json
+// path is set, it writes a summary that carries cause as its error. It
+// returns the tool-failure code.
+func abort(summaryPath string, cause error, errOut io.Writer) int {
+	if summaryPath != "" {
+		sum := newSummary(0)
+		msg := cause.Error()
+		sum.Error = &msg
+		if err := writeSummary(summaryPath, sum); err != nil {
+			fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, err)
+		}
+	}
+	return exitcode.ToolFailure
+}
+
+// scan accumulates findings in module order (the deprecated check before
+// the malicious check for each module) and tallies the failed lookups.
+func scan(
+	ctx context.Context,
+	mods []vendormod.Module,
+	versions versionsClient,
+	vulns vulnsClient,
+	errOut io.Writer,
+) ([]finding, *summary) {
+	sum := newSummary(len(mods))
 	var hits []finding
 	for _, mod := range mods {
 		dep, depErr := evaluateDeprecated(ctx, versions, mod)
 		if depErr != nil {
-			fmt.Fprintf(errOut, "%s: %s: %v\n", toolName, mod.Path, depErr)
+			sum.addError(errOut, mod, lookupVersions, depErr)
 		} else {
 			hits = append(hits, dep...)
 		}
 
 		mal, malErr := evaluateMalicious(ctx, vulns, mod)
 		if malErr != nil {
-			fmt.Fprintf(errOut, "%s: %s: %v\n", toolName, mod.Path, malErr)
+			sum.addError(errOut, mod, lookupVulns, malErr)
 		} else {
 			hits = append(hits, mal...)
 		}
-	}
 
-	if emitErr := emitFindings(out, format, hits); emitErr != nil {
+		if depErr != nil || malErr != nil {
+			sum.Unevaluated++
+		}
+	}
+	sum.Findings = len(hits)
+	return hits, sum
+}
+
+// report emits the findings and the stderr summary, then picks the exit code.
+// The findings line still prints when some modules went unevaluated,
+// but the unevaluated line comes last and the run exits 2, because the
+// findings list may be missing hits from those modules. The no-findings line
+// only prints when every module got evaluated.
+func report(opts options, hits []finding, sum *summary, out, errOut io.Writer) (int, error) {
+	if emitErr := writeFindings(out, opts.output, opts.format, hits); emitErr != nil {
 		return exitcode.ToolFailure, fmt.Errorf("emit findings: %w", emitErr)
 	}
 
 	if len(hits) > 0 {
-		fmt.Fprintf(errOut, "%s: %d finding(s) across %d module(s)\n", toolName, len(hits), len(mods))
+		fmt.Fprintf(errOut, "%s: %d finding(s) across %d module(s)\n", toolName, len(hits), sum.Modules)
+	}
+	if sum.Unevaluated > 0 {
+		fmt.Fprintf(errOut, "%s: %d module(s) could not be evaluated\n", toolName, sum.Unevaluated)
+		return exitcode.ToolFailure, nil
+	}
+	if len(hits) > 0 {
 		return exitcode.Findings, nil
 	}
-	fmt.Fprintf(errOut, "%s: scanned %d module(s), no findings\n", toolName, len(mods))
+	fmt.Fprintf(errOut, "%s: scanned %d module(s), no findings\n", toolName, sum.Modules)
 	return exitcode.OK, nil
+}
+
+// writeFindings emits the findings to out, or to the output file when one
+// is set. A file output renders the whole report in memory first, so an
+// emit failure leaves the file untouched.
+func writeFindings(out io.Writer, output, format string, hits []finding) error {
+	if output == "" {
+		return emitFindings(out, format, hits)
+	}
+	var buf bytes.Buffer
+	if err := emitFindings(&buf, format, hits); err != nil {
+		return err
+	}
+	return writeFileAtomic(output, buf.Bytes())
+}
+
+// writeSummary renders sum as one line of JSON and writes it to path.
+func writeSummary(path string, sum *summary) error {
+	data, err := json.Marshal(sum)
+	if err != nil {
+		return fmt.Errorf("marshal summary: %w", err)
+	}
+	return writeFileAtomic(path, append(data, '\n'))
+}
+
+// writeFileAtomic replaces path with data. It writes and syncs a temporary
+// file in path's directory before renaming it over path, so a reader sees
+// either the old file or the whole new one. Any failure removes the
+// temporary file rather than leaving a partial one behind. The temporary
+// file opens with [reportPerm], which the file creation mask then narrows as
+// it would for [os.Create], where [os.CreateTemp] would leave it 0600.
+func writeFileAtomic(path string, data []byte) error {
+	name := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".tmp"+rand.Text())
+	tmp, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, reportPerm)
+	if err != nil {
+		return fmt.Errorf("create temp file for %s: %w", path, err)
+	}
+	if commitErr := commitTemp(tmp, path, data); commitErr != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return commitErr
+	}
+	return nil
+}
+
+// commitTemp writes data to the temporary file and flushes it to disk. It
+// then closes the file and renames it over path.
+func commitTemp(tmp *os.File, path string, data []byte) error {
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync %s: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("replace %s: %w", path, err)
+	}
+	return nil
 }
 
 func emitFindings(out io.Writer, format string, hits []finding) error {
 	switch format {
-	case "text":
+	case formatText:
 		return emitText(out, hits)
-	case "sarif":
+	case formatSARIF:
 		return emitSARIF(out, hits)
 	default:
 		return fmt.Errorf("%w: %q", errUnknownFormat, format)

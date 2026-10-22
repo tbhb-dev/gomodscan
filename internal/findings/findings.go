@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Authors of Proofhouse
+// Copyright Tony Burns
 
 // Package findings emits scanner findings in two formats: a
 // human-readable, agent-parseable text shape and SARIF 2.1.0 for
@@ -39,7 +39,7 @@ import (
 // infoURI points consumers at the canonical gomodscan repository
 // when they follow up on a finding. Every SARIF run records it as
 // the tool driver's information URI.
-const infoURI = "https://github.com/proofhouse/gomodscan"
+const infoURI = "https://github.com/tbhb-dev/gomodscan"
 
 // Level names the SARIF result severity vocabulary. The text
 // emitter prints the bare string at the start of each line; the
