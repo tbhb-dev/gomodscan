@@ -22,5 +22,14 @@
     "github>tbhb-dev/devtools//.github/renovate-go-config.json5#830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9", // v0.14.0
   ],
 
+  // The repository keeps go 1.26 and toolchain go1.26.5 on purpose.
+  packageRules: [
+    {
+      matchManagers: ["gomod"],
+      matchDepNames: ["go"],
+      enabled: false,
+    },
+  ],
+
   repositories: ["tbhb-dev/gomodscan"],
 }
