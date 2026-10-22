@@ -11,7 +11,7 @@ import (
 )
 
 // A cached entry with no stored header still yields a usable response, and a
-// freshly made header carries the from-cache marker.
+// freshly made header has the from-cache marker.
 func TestEntryResponseNilHeader(t *testing.T) {
 	t.Parallel()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://example.test", nil)

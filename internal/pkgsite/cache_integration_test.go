@@ -70,8 +70,9 @@ func TestVersions_CacheStackServesSecondCallFromDisk(t *testing.T) {
 
 // TestVersions_CacheStackDoesNotCacheNotFound confirms the full stack honors
 // the no-store 404 pkg.go.dev returns for a private module or one it never
-// indexed: the negative lookup writes nothing and re-hits the origin every
-// run, so a stale miss never masks a module that later gets indexed.
+// indexed: the negative lookup doesn't write a cache entry and re-hits the
+// origin every run, so a stale miss never masks a module that later gets
+// indexed.
 func TestVersions_CacheStackDoesNotCacheNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -106,8 +107,8 @@ func TestVersions_CacheStackDoesNotCacheNotFound(t *testing.T) {
 // TestVersions_CacheStackReportsCachedFailures checks the diagnostics of a
 // page fault, first from the origin and then from the on-disk cache. From the
 // origin, the fault reports the one attempt and the 200 it got. From the
-// cache, it made no attempt, so it reports 0 attempts and status 0, which
-// keeps a 0 status meaning no HTTP response arrived.
+// cache, it didn't make an attempt, so it reports 0 attempts and status 0,
+// which keeps a 0 status meaning no HTTP response arrived.
 func TestVersions_CacheStackReportsCachedFailures(t *testing.T) {
 	t.Parallel()
 

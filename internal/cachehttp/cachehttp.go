@@ -3,24 +3,24 @@
 
 // Package cachehttp builds an on-disk caching [http.RoundTripper] for the
 // pkg.go.dev client. pkg.go.dev answers GET /v1/versions/{module} with
-// Cache-Control: public, max-age=3600 and sends no revalidation header and no
-// Vary, so a private cache may reuse a module's version list for the freshness
-// window the server grants and re-fetches in full once that window lapses. A
-// repeated pre-commit run inside the window then skips the network. The 404
-// for a private module or one pkg.go.dev never indexed carries no-store, so
-// this cache never records a negative lookup.
+// Cache-Control: public, max-age=3600 and doesn't send a revalidation header
+// or Vary, so a private cache may reuse a module's version list for the
+// freshness window the server grants and re-fetches in full once that window
+// lapses. A repeated pre-commit run inside the window then skips the network.
+// The 404 for a private module or one pkg.go.dev never indexed carries
+// no-store, so this cache never records a negative lookup.
 //
 // The transport honors only the directives pkg.go.dev sends. It keeps a 200
 // for its max-age and refuses no-store. The full request URL forms the whole
 // key. The server ignores If-Modified-Since and never returns 304, so no
 // revalidation path exists and a stale entry triggers a fresh fetch. Freshness
-// stays strict, so the transport never serves a stale entry and a failed
-// origin surfaces as an error rather than a silently outdated answer.
+// checks are strict. The transport never serves a stale entry, and a failed
+// origin produces an error rather than a silently outdated answer.
 //
 // A cache miss covers the only failure mode the transport allows. A store
 // error or a corrupt entry turns into a miss, and a failed write drops
-// silently. The request then reaches the origin anyway, so the cache speeds
-// a scan up yet never fails one.
+// silently. The transport then sends the request to the origin anyway. The
+// cache can speed a scan up but never fails one.
 //
 // Layer the cache outside the retry transport
 // (github.com/tbhb-dev/gomodscan/internal/retryhttp) so a fresh hit
@@ -45,14 +45,14 @@ import (
 
 // FromCacheHeader marks a response the transport served from the on-disk
 // store rather than the origin. The pkg.go.dev client reads it to report a
-// cached response as one that made no network attempt, and tests and curious
+// cached response as one without a network attempt, and tests and curious
 // operators read it to tell a hit from a miss.
 const FromCacheHeader = "X-From-Cache"
 
-// Store persists opaque cache blobs under a key. Neither method returns an
-// error: the cache must never fail a scan, so the disk-backed store swallows
-// its IO errors and reports a miss from Get or drops the write from Put rather
-// than propagating them.
+// Store persists opaque cache blobs under a key. Get and Put don't return
+// errors because the cache must never fail a scan. The disk-backed store
+// discards its IO errors instead of propagating them. Get reports a miss and
+// Put drops the write.
 type Store interface {
 	Get(key string) ([]byte, bool)
 	Put(key string, blob []byte)
@@ -74,16 +74,16 @@ type transport struct {
 }
 
 // NewTransport wraps inner with the on-disk response cache backed by store. A
-// GET whose cached copy stays fresh returns from store and never reaches
-// inner. Every other request delegates to inner, and a 200 that carries
-// max-age without no-store goes into store before it returns.
+// GET whose cached copy is still fresh returns from store without calling
+// inner. Every other request delegates to inner, and a 200 that sets max-age
+// without no-store goes into store before it returns.
 func NewTransport(inner http.RoundTripper, store Store) http.RoundTripper {
 	return &transport{inner: inner, store: store}
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Only a GET reaches the cache, and the client only ever sends pkg.go.dev
-	// a GET. Any other method passes straight through.
+	// The cache handles only GET requests, the one method the client sends
+	// pkg.go.dev. Any other method passes straight through.
 	if req.Method != http.MethodGet {
 		return t.inner.RoundTrip(req) //nolint:wrapcheck // transparent pass-through, and inner owns the error.
 	}
@@ -116,7 +116,7 @@ func (t *transport) fresh(req *http.Request, key string) (*http.Response, bool) 
 }
 
 // cache stores resp under key when the response qualifies, then returns a
-// response whose body the caller can read. A 200 that carries max-age
+// response whose body the caller can read. A 200 that sets max-age
 // without no-store goes into store. Anything else, the no-store 404 or
 // a directive-free response, flows straight back. A failed body read or
 // encode skips the write yet still returns the buffered body.
@@ -172,7 +172,7 @@ func (e entry) response(req *http.Request) *http.Response {
 }
 
 // cacheKey derives the store key from the request. The method and full URL
-// together form the whole key. pkg.go.dev sends no Vary, and the limit and
+// together form the whole key. pkg.go.dev doesn't send Vary, and the limit and
 // token query parameters that page the results already ride in the URL.
 func cacheKey(req *http.Request) string {
 	sum := sha256.Sum256([]byte(req.Method + " " + req.URL.String()))
@@ -180,7 +180,7 @@ func cacheKey(req *http.Request) string {
 }
 
 // cacheControl holds the Cache-Control directives the cache acts on. present
-// reports whether the header carried any directive at all, so a caller can
+// reports whether the header had any directive at all, so a caller can
 // tell "no caching guidance" (don't store) apart from "max-age=0" (store
 // nothing fresh).
 type cacheControl struct {

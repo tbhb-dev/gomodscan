@@ -20,7 +20,7 @@ import (
 
 // TestRealMain_ReportFileMode checks the -o and -summary-json files take mode
 // 0644 less the bits the file creation mask clears, as a file from os.Create
-// would, rather than the 0600 a plain os.CreateTemp leaves.
+// would. A plain os.CreateTemp leaves mode 0600.
 //
 //nolint:paralleltest // the file creation mask belongs to the whole process
 func TestRealMain_ReportFileMode(t *testing.T) {

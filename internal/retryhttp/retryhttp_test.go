@@ -23,19 +23,19 @@ import (
 // The tests below drive failsafe-go's retry/backoff policy through a real
 // http.Client whose transport wraps retryhttp.NewTransport around an in-memory
 // RoundTripper, inside a testing/synctest bubble. The bubble's fake clock
-// advances every backoff or Retry-After wait instantly, so the tests reuse the
-// real production timing constants yet finish in microseconds and stay
-// deterministic. (synctest doesn't advance time across real network blocks, so
-// the in-memory transport stands in for the network.)
+// advances every backoff or Retry-After wait instantly. The tests reuse the
+// real production timing constants yet finish in microseconds with
+// deterministic results. (synctest doesn't advance time across real network
+// blocks, so the in-memory transport replaces the network.)
 
 const okBody = `{"ok":true}`
 
-// errConnReset stands in for a transient network error the inner transport
+// errConnReset represents a transient network error the inner transport
 // surfaces.
 var errConnReset = errors.New("connection reset")
 
-// roundTripperFunc adapts a function to an http.RoundTripper, standing in for
-// the network so the retry policy runs under a fake clock with no real I/O.
+// roundTripperFunc adapts a function to an http.RoundTripper. It replaces the
+// network and lets the retry policy run under a fake clock without real I/O.
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -131,7 +131,7 @@ func TestNewTransport_ExhaustsRetriesReturnsFinalResponse(t *testing.T) {
 }
 
 // TestNewTransport_RetriesTooManyRequests covers both shapes of 429 the
-// upstreams return: one carrying a Retry-After header and a bare one without
+// upstreams return: one with a Retry-After header and a bare one without
 // it. The fake clock lets each case assert the delay that distinguishes the
 // Retry-After path from the backoff fallback.
 func TestNewTransport_RetriesTooManyRequests(t *testing.T) {

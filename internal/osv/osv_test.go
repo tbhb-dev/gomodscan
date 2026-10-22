@@ -149,7 +149,7 @@ func TestQuery(t *testing.T) {
 				http.Error(w, "boom", http.StatusInternalServerError)
 			},
 			// The default client retries 5xx; inject a plain client so this
-			// case exercises the status-to-error mapping in a single shot. The
+			// case exercises the status-to-error mapping in one shot. The
 			// TestQuery_Retries* tests below cover the retry behavior itself.
 			clientOpts: func(c *osv.Client) { c.HTTPClient = &http.Client{} },
 			wantErr:    []error{osv.ErrUnexpectedStatus},
@@ -187,8 +187,8 @@ func TestQuery(t *testing.T) {
 }
 
 // runQueryCase wires the case's handler into an httptest server and
-// points a Client at it. The case's expectations then drive the
-// Query call and the post-call assertions.
+// points a Client at it. The Query call and the post-call assertions
+// then use the case's expectations.
 func runQueryCase(t *testing.T, tc queryCase) {
 	t.Helper()
 	srv := httptest.NewServer(tc.handler)
@@ -249,15 +249,15 @@ func TestQuery_ContextCancelled(t *testing.T) {
 // public Query call, inside a testing/synctest bubble with an in-memory
 // transport. The bubble's fake clock advances every backoff wait instantly, so
 // the tests reuse the real production timing constants yet finish in
-// microseconds and stay deterministic. The retryhttp package tests cover
+// microseconds with deterministic results. The retryhttp package tests cover
 // the transport's own behavior (Retry-After handling, per-attempt timeout,
 // jitter); these confirm Query composes with the shared transport and maps
 // a persistent failure onto ErrUnexpectedStatus.
 
 const retryVulnsBody = `{"vulns":[{"id":"MAL-2025-0001","summary":"Malicious code"}]}`
 
-// roundTripperFunc adapts a function to an http.RoundTripper, standing in for
-// the network so the retry policy runs under a fake clock with no real I/O.
+// roundTripperFunc adapts a function to an http.RoundTripper. It replaces the
+// network and lets the retry policy run under a fake clock without real I/O.
 // (synctest doesn't advance time across real network blocks.)
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
