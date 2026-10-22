@@ -161,7 +161,7 @@ func TestVersions(t *testing.T) {
 				http.Error(w, "boom", http.StatusInternalServerError)
 			},
 			// The default client retries 5xx; inject a plain client so
-			// this case exercises the status-to-error mapping in a single
+			// this case exercises the status-to-error mapping in one
 			// shot. The TestRetryTransport_* tests below cover the retry
 			// behavior itself.
 			clientOpts: func(c *pkgsite.Client) { c.HTTPClient = &http.Client{} },
@@ -214,8 +214,8 @@ func TestVersions(t *testing.T) {
 }
 
 // runVersionsCase wires the case's handler into an httptest server
-// and points a Client at it. The case's expectations then drive the
-// Versions call and the post-call assertions.
+// and points a Client at it. The Versions call and the post-call
+// assertions then use the case's expectations.
 func runVersionsCase(t *testing.T, tc versionsCase) {
 	t.Helper()
 	srv := httptest.NewServer(tc.handler)
@@ -271,7 +271,7 @@ func TestVersions_StalePageTokenReportsItsRequest(t *testing.T) {
 
 // TestVersions_ContextCancelled lives outside the table because
 // the timing dance (slow handler vs. short deadline) doesn't fit
-// the synchronous case shape the table assumes.
+// the synchronous case structure the table assumes.
 func TestVersions_ContextCancelled(t *testing.T) {
 	t.Parallel()
 
@@ -297,13 +297,13 @@ func TestVersions_ContextCancelled(t *testing.T) {
 // The retry tests below drive the failsafe-go retry/backoff policy
 // through the public Versions call, inside a testing/synctest bubble with
 // an in-memory transport. The bubble's fake clock advances every backoff
-// or Retry-After wait instantly, so the tests reuse the real production
-// timing constants yet finish in microseconds and stay deterministic.
+// or Retry-After wait instantly. The tests reuse the real production timing
+// constants yet finish in microseconds with deterministic results.
 // The export_test.go shim reaches the unexported transport builder.
 
 const retryOKBody = `{"items":[{"modulePath":"example.com/m","version":"v1.0.0","latestVersion":"v1.0.0"}],"total":1}`
 
-// errConnRefused stands in for a transient network error the in-memory
+// errConnRefused represents a transient network error the in-memory
 // transport surfaces on every attempt.
 var errConnRefused = errors.New("connection refused")
 
@@ -429,7 +429,7 @@ func TestRetryTransport_DoesNotRetryForbidden(t *testing.T) {
 }
 
 // TestRetryTransport_RetriesTooManyRequests covers both shapes of 429
-// pkg.go.dev returns: one carrying a Retry-After header and a bare
+// pkg.go.dev returns: one with a Retry-After header and a bare
 // text/html one without it (golang/go#78590 caught the two back-to-back).
 // The fake clock lets each case assert the delay that distinguishes the
 // Retry-After path from the backoff fallback. The bare case also confirms

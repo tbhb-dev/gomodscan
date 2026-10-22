@@ -34,8 +34,8 @@ const okBody = `{"ok":true}`
 
 const moduleURL = "http://example.test/v1/versions/example.com/m"
 
-// roundTripperFunc adapts a function to an http.RoundTripper, standing in for
-// the network so the cache policy runs with no real I/O.
+// roundTripperFunc adapts a function to an http.RoundTripper. It replaces the
+// network and lets the cache policy run without real I/O.
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -68,8 +68,8 @@ func (m *memStore) len() int {
 	return len(m.data)
 }
 
-// reply builds an inner response carrying the given Cache-Control directive
-// (omitted when cacheControl stays empty).
+// reply builds an inner response with the given Cache-Control directive
+// (omitted when cacheControl is empty).
 func reply(req *http.Request, status int, body, cacheControl string) *http.Response {
 	header := make(http.Header)
 	if cacheControl != "" {
@@ -113,7 +113,8 @@ func (r result) fromCache() bool { return r.header.Get(cachehttp.FromCacheHeader
 
 // fetch issues a request for moduleURL through c, drains and closes the body,
 // and returns the captured result. Closing the body here keeps the response
-// out of the caller, so each test reads cache state without juggling bodies.
+// out of the caller. Each test then reads cache state without juggling
+// bodies.
 func fetch(t *testing.T, c *http.Client, method string) result {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), method, moduleURL, nil)
@@ -310,7 +311,7 @@ func TestDefaultDir(t *testing.T) {
 
 var errBoom = errors.New("boom")
 
-// A failing reader stands in for a response body that breaks mid-stream.
+// A failing reader simulates a response body that breaks mid-stream.
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, errBoom }

@@ -145,7 +145,7 @@ example.com/exact
 func TestParseReportsScannerError(t *testing.T) {
 	t.Parallel()
 	// One header line longer than the 1 MiB scanner cap forces
-	// bufio.Scanner to surface bufio.ErrTooLong, which Parse wraps
+	// bufio.Scanner to report bufio.ErrTooLong, which Parse wraps
 	// and returns. Exercising the wrap closes the only otherwise
 	// unreachable error path in Parse.
 	huge := "# example.com/big " + strings.Repeat("v", (1<<20)+1) + "\n"

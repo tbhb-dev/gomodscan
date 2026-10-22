@@ -7,8 +7,8 @@
 // walks hundreds of modules, so one transient failure shouldn't end the run.
 // [NewTransport] re-issues those attempts with exponential backoff and honors
 // a Retry-After header when the upstream sends one. It leaves terminal
-// responses alone, so each client's own status switch still maps a 404 or a
-// 400 onto its own error. [WithAttempts] and [Error] let a client report how
+// responses alone. Each client's own status switch still maps a 404 or a 400
+// onto its own error. [WithAttempts] and [Error] let a client report how
 // many attempts a request that still failed made, and what it got last.
 package retryhttp
 
@@ -26,7 +26,7 @@ import (
 const (
 	// MaxRetries bounds how many times the transport re-issues a request
 	// after a retryable response (429 or most 5xx) or a transient network
-	// error, so a request gets MaxRetries+1 attempts in all. Three retries
+	// error. A request gets MaxRetries+1 attempts in all. Three retries
 	// back off about 1 s, 2 s, then 4 s, which rides out a short upstream
 	// blip while holding the worst-case per-request wait down when an
 	// upstream throttles the whole host.
@@ -42,19 +42,19 @@ const (
 	// Retry-After value pkg.go.dev returns when it does send one.
 	MaxDelay = 30 * time.Second
 
-	// AttemptTimeout caps a single HTTP attempt. The transport composes this
-	// timeout inside the retry policy, so each attempt gets its own deadline
-	// and a long Retry-After wait between attempts survives intact.
+	// AttemptTimeout caps each HTTP attempt. The transport composes this
+	// timeout inside the retry policy. Each attempt gets its own deadline, and
+	// the timeout doesn't cut short a long Retry-After wait between attempts.
 	AttemptTimeout = 30 * time.Second
 
 	// jitterFactor randomizes each backoff delay so a batch of lookups
-	// doesn't retry in lockstep.
+	// doesn't retry at the same moment.
 	jitterFactor = 0.25
 )
 
 // NewTransport wraps inner with a per-attempt timeout plus retry/backoff.
-// failsafehttp.NewRetryPolicyBuilder already retries the responses worth a
-// second look (a 429 or most 5xx) along with transient network errors, and
+// failsafehttp.NewRetryPolicyBuilder already retries the transient
+// responses (a 429 or most 5xx) along with transient network errors, and
 // honors a Retry-After header. On top, this adds exponential backoff for the
 // no-header case plus a jitter factor, under a ceiling of MaxRetries
 // retries. Composing the
@@ -64,7 +64,7 @@ const (
 //
 // ReturnLastFailure keeps retries transparent. Once the policy exhausts its
 // attempts and gives up, the transport returns the final response (or error)
-// directly rather than a retrypolicy.ExceededError wrapper, so a caller's status
+// directly rather than a retrypolicy.ExceededError wrapper. A caller's status
 // switch still maps a persistent 429 or 5xx onto its own unexpected-status
 // error.
 func NewTransport(
@@ -112,9 +112,9 @@ func (t countingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 // Error reports a request that still failed once the transport stopped
 // retrying. Attempts counts every try the transport made, and LastStatus
-// holds the final HTTP status, or 0 when the last try got no response (a
-// network error or a per-attempt timeout). Err carries the client's own
-// error, so errors.Is still matches its sentinels.
+// holds the final HTTP status, or 0 when the last try ended without a
+// response (a network error or a per-attempt timeout). Err carries the
+// client's own error, so errors.Is still matches its sentinels.
 type Error struct {
 	Err        error
 	Attempts   int

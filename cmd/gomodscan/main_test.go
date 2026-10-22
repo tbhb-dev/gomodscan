@@ -28,18 +28,18 @@ import (
 	"github.com/tbhb-dev/gomodscan/internal/vendormod"
 )
 
-// errLookupFailure stands in for any non-not-found pkg.go.dev lookup
+// errLookupFailure represents any non-not-found pkg.go.dev lookup
 // error the fake client surfaces. Declared once so err113 never fires.
 var errLookupFailure = errors.New("network failure")
 
-// errQueryFailure stands in for any OSV-side error the stub surfaces
+// errQueryFailure represents any OSV-side error the stub surfaces
 // back to the scanner.
 var errQueryFailure = errors.New("network failure")
 
 // fakeVersionsClient drives the deprecated scanner from tests by
 // returning a canned response (or error) per module path. The interface
 // keeps run injectable so the table-driven cases below don't need to
-// stand up an httptest server for every branch.
+// start an httptest server for every branch.
 type fakeVersionsClient struct {
 	responses map[string][]pkgsite.ModuleVersion
 	errors    map[string]error
@@ -222,7 +222,7 @@ func TestEmitSARIF_RegistersAllRulesAndEmitsResults(t *testing.T) {
 	assert.Contains(t, out, `"name": "example.com/c@v2.0.0"`)
 	assert.Contains(t, out, `"latest": "v0.2.0"`)
 	assert.Contains(t, out, `"id": "MAL-2025-0001"`)
-	// Every result carries the vendor manifest as its physical
+	// The results record the vendor manifest as their physical
 	// location, with the module's line threaded onto the region so
 	// Code Scanning anchors each finding on the real file.
 	assert.Contains(t, out, `"uri": "vendor/modules.txt"`)
@@ -312,7 +312,7 @@ func TestCollectDeprecated(t *testing.T) {
 		// Order tracks the version slice: deprecated entry comes first.
 		assert.Equal(t, kindDeprecated, got[0].kind)
 		assert.Equal(t, kindRetracted, got[1].kind)
-		// Both findings carry the module's manifest line.
+		// Both findings record the module's manifest line.
 		assert.Equal(t, mod.Line, got[0].line)
 		assert.Equal(t, mod.Line, got[1].line)
 	})
@@ -467,8 +467,8 @@ const exhaustedLookupMessage = "unexpected status from pkg.go.dev: " +
 	"GET https://pkg.go.dev/v1/versions/example.com/explode?limit=200: status 503 " +
 	"(attempts: 4, last status: 503)"
 
-// dirEntries lists the names under dir, so a test can assert a failed write
-// left no temporary file behind.
+// dirEntries lists the names under dir, so a test can assert that a failed
+// write didn't leave a temporary file behind.
 func dirEntries(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -487,7 +487,7 @@ func stderrLines(errOut string) []string {
 
 // readOnlyDir returns a directory the test process can't create files in.
 // It skips the test where permission bits don't stop the writer: on Windows,
-// and as root. The directory stays empty, so t.TempDir's cleanup removes it
+// and as root. The directory is empty, so t.TempDir's cleanup removes it
 // without restoring write permission first.
 func readOnlyDir(t *testing.T) string {
 	t.Helper()
@@ -755,7 +755,7 @@ func TestRun_Output(t *testing.T) {
 func TestRun_EmptySARIF(t *testing.T) {
 	t.Parallel()
 
-	// assertEmptySARIF checks for a valid v2.1.0 document holding one run
+	// assertEmptySARIF checks for a valid v2.1.0 document containing one run
 	// with the gomodscan driver and an empty, non-null results array.
 	assertEmptySARIF := func(t *testing.T, data []byte) {
 		t.Helper()

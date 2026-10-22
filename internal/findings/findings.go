@@ -7,7 +7,7 @@
 // The text format mirrors SARIF semantics so a reader who knows one
 // understands the other.
 //
-// Each text line follows the shape:
+// Each text line follows the format:
 //
 //	<level>: <tool>/<rule>: <module>@<version> [<key>=<value> pairs]
 //
@@ -75,7 +75,7 @@ type Location struct {
 // location Code Scanning requires, mapping URI onto
 // artifactLocation.uri and Line onto region.startLine so the finding
 // anchors on a real file. The partial fingerprint
-// modulePathVersion/v1 carries the same identifier so downstream
+// modulePathVersion/v1 contains the same identifier so downstream
 // consumers can dedupe across runs. Properties pass through to the
 // SARIF property bag verbatim.
 func AddResult(

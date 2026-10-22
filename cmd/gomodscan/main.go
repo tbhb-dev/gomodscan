@@ -25,12 +25,12 @@
 // -no-cache to turn that off.
 //
 // The -format flag selects the finding emitter. Text output (the
-// default) follows the unified shape documented in the [findings]
+// default) follows the unified format documented in the [findings]
 // package. SARIF output emits a v2.1.0 report suitable for ingestion by
 // GitHub Code Scanning. The findings go to stdout unless -o (long form
 // -output) names a file. gomodscan writes that file, and the -summary-json
 // file, through a temporary file in the same directory that it then renames
-// into place, so a reader never sees a partial file. Both files end up mode
+// into place. A reader never sees a partial file. Both files end up mode
 // 0644, less any bits the process's file creation mask clears.
 //
 // The -summary-json flag writes a machine-readable summary of the run on
@@ -39,23 +39,24 @@
 // field. Each errors entry records one registry lookup that still failed after
 // the retries: the module path and version, the lookup ("versions" for
 // pkg.go.dev or "vulns" for OSV), the error message, the attempts, and the
-// last HTTP status, which reads 0 when the final attempt got no response. The
+// last HTTP status, which reads 0 when the final attempt ended without a
+// response. The
 // attempts count only requests this run sent, so a lookup that failed on a
 // pkg.go.dev response from the on-disk cache records 0 attempts and a last
-// status of 0, and its message names the cache. The top-level error stays
+// status of 0, and its message mentions the cache. The top-level error stays
 // null once the scan runs. With -version, which scans nothing, the counts stay
-// 0 and the error stays null. When the scan never starts, because of a bad
+// 0 and the error is null. When the scan never starts, because of a bad
 // argument or an unreadable vendor/modules.txt, error holds the reason and the
 // counts stay 0.
 //
 // A failed -o or -summary-json write prints its error ahead of the stderr
-// summary, so the summary stays the last line of the run, and exits 2.
+// summary and exits 2. The summary is still the last line of the run.
 //
-// gomodscan exits 0 when every module came back clean and 1 when at least one
-// finding surfaced. It exits 2 when any module couldn't be evaluated after the
+// gomodscan exits 0 when every module came back clean and 1 when it reports at
+// least one finding. It exits 2 when any module couldn't be evaluated after the
 // retries, or on any other operational failure (bad arguments, an unreadable
-// vendor/modules.txt, a failed output write). An unevaluated module outranks
-// findings, so a run with both exits 2.
+// vendor/modules.txt, a failed output write). An unevaluated module takes
+// precedence over findings. A run with both exits 2.
 //
 // [findings]: https://pkg.go.dev/github.com/tbhb-dev/gomodscan/internal/findings
 package main
@@ -128,20 +129,20 @@ var errUnknownFormat = errors.New("unknown -format (want text or sarif)")
 // versionsClient abstracts the slice of [pkgsite.Client] the deprecated
 // scanner needs. The interface keeps run injectable from tests, so the
 // table-driven cases that mutation testing relies on don't have to
-// stand up a real HTTP transport for every branch.
+// build a real HTTP transport for every branch.
 type versionsClient interface {
 	Versions(ctx context.Context, module string) ([]pkgsite.ModuleVersion, error)
 }
 
 // vulnsClient abstracts the slice of [osv.Client] the malicious scanner
-// needs. Keeping run injectable lets the table-driven cases drive every
+// needs. Keeping run injectable lets the table-driven cases exercise every
 // branch through a stub rather than an httptest server.
 type vulnsClient interface {
 	Query(ctx context.Context, pkg osv.Package, version string) ([]osv.Vulnerability, error)
 }
 
 // findingKind enumerates the issue classes gomodscan reports. The
-// string value doubles as the SARIF ruleId.
+// string value is also the SARIF ruleId.
 type findingKind string
 
 const (
@@ -150,7 +151,7 @@ const (
 	kindMalicious  findingKind = "malicious-package"
 )
 
-// finding describes a single hit from either scanner. The kind selects
+// finding describes one hit from either scanner. The kind selects
 // which fields apply. Retracted findings use reason, while
 // deprecated findings add latest. Malicious-package findings fill id
 // and summary.
@@ -175,7 +176,7 @@ func (f finding) level() findings.Level {
 	return findings.LevelWarning
 }
 
-// props returns the property bag for this finding in the shape shared
+// props returns the property bag for this finding in the layout shared
 // by the text and SARIF emitters. Keys match SARIF property names so
 // consumers reading either output channel see the same vocabulary.
 func (f finding) props() map[string]string {
@@ -215,7 +216,8 @@ func (f finding) message() string {
 	}
 }
 
-// options carries the flags that shape a scan and where its results go.
+// options records the flags that configure a scan and choose where its
+// results go.
 type options struct {
 	modroot     string
 	format      string
@@ -226,9 +228,9 @@ type options struct {
 // lookupError records one registry lookup that still failed for a module
 // after the retries. Lookup names the registry call. Attempts and LastStatus
 // come from the [retryhttp.Error] the client returns, and stay 0 for a
-// failure that never reached the transport. A LastStatus of 0 also means the
-// last attempt got no HTTP response, or that the response came from the
-// on-disk cache rather than an attempt.
+// failure before the transport sent a request. A LastStatus of 0 also means
+// the last attempt ended without an HTTP response, or that the response came
+// from the on-disk cache rather than an attempt.
 type lookupError struct {
 	Module     string `json:"module"`
 	Lookup     string `json:"lookup"`
@@ -239,8 +241,8 @@ type lookupError struct {
 
 // summary is the -summary-json document. Modules counts the vendored
 // modules, Unevaluated the ones with at least one failed lookup, and Errors
-// holds every failed lookup (up to two per module, one per registry). Error
-// holds the reason a run stopped before its scan, and stays nil otherwise.
+// lists every failed lookup (up to two per module, one per registry). Error
+// holds the reason a run stopped before its scan, and is nil otherwise.
 type summary struct {
 	Schema      int           `json:"schema"`
 	Version     string        `json:"version"`
@@ -319,8 +321,8 @@ func realMain(args []string, out, errOut io.Writer) int {
 		info := buildmeta.Get()
 		fmt.Fprintf(out, "%s %s\ncommit: %s\ndate:   %s\n", toolName, info.Version, info.Commit, info.Date)
 		// -summary-json promises a summary on every exit status, so -version
-		// writes one too. It scanned nothing, so the counts stay 0 and the
-		// error stays null.
+		// writes one too. It scanned nothing. Its counts are 0 and its error
+		// is null.
 		if opts.summaryJSON != "" {
 			if err := writeSummary(opts.summaryJSON, newSummary(0)); err != nil {
 				fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, err)
@@ -380,9 +382,8 @@ func newVersionsClient(noCache bool, cacheDir string) *pkgsite.Client {
 // summary are out. An unknown -format, a failure to read the module set, emit
 // the findings, or write the -summary-json file also returns a tool-failure
 // code. For a scan that never starts, run logs the cause to errOut and
-// returns it as the error. A failed write logs to errOut itself, ahead of the
-// stderr summary, so the summary stays the last line, and run returns a nil
-// error for it.
+// returns it as the error. A failed write logs to errOut itself before the
+// stderr summary that ends the output. run returns a nil error for it.
 func run(
 	ctx context.Context,
 	opts options,
@@ -419,7 +420,7 @@ func run(
 }
 
 // checkFormat rejects a -format value outside the {text, sarif} allowlist
-// before the scan starts, so a bad flag costs no registry lookups.
+// before the scan starts. A bad flag doesn't cost any registry lookups.
 func checkFormat(format string) error {
 	if format != formatText && format != formatSARIF {
 		return fmt.Errorf("%w: %q", errUnknownFormat, format)
@@ -435,7 +436,7 @@ func abortRun(summaryPath string, cause error, errOut io.Writer) int {
 }
 
 // abort ends a run that stopped before its scan began. When a -summary-json
-// path is set, it writes a summary that carries cause as its error, and a
+// path is set, it writes a summary with cause as its error, and a
 // failed write logs after the cause the caller has already printed. It
 // returns the tool-failure code.
 func abort(summaryPath string, cause error, errOut io.Writer) int {
@@ -528,7 +529,7 @@ func writeSummary(path string, sum *summary) error {
 }
 
 // writeFileAtomic replaces path with data. It writes and syncs a temporary
-// file in path's directory before renaming it over path, so a reader sees
+// file in path's directory before renaming it over path. A reader sees
 // either the old file or the whole new one. Any failure removes the
 // temporary file rather than leaving a partial one behind. The temporary
 // file opens with [reportPerm], which the file creation mask then narrows as
@@ -616,7 +617,7 @@ func emitSARIF(out io.Writer, hits []finding) error {
 
 // evaluateDeprecated looks up the module on pkg.go.dev and classifies
 // its retraction and deprecation status. A not-found result marks the
-// module as private, replaced, or not indexed, so the scan skips it.
+// module as private, replaced, or not indexed, and the scan skips it.
 func evaluateDeprecated(ctx context.Context, client versionsClient, mod vendormod.Module) ([]finding, error) {
 	versions, err := client.Versions(ctx, mod.Path)
 	if err != nil {
@@ -632,8 +633,8 @@ func evaluateDeprecated(ctx context.Context, client versionsClient, mod vendormo
 // per concern. Retraction looks at the entry whose version matches the
 // vendored pin. Deprecation looks at the entry the API names as latest.
 // The Go module system stores deprecation on the most recent version's
-// go.mod, so any older deprecation flags stay informational rather than
-// authoritative.
+// go.mod. A deprecation flag on an older version is informational rather
+// than authoritative.
 func collectDeprecated(mod vendormod.Module, versions []pkgsite.ModuleVersion) []finding {
 	if len(versions) == 0 {
 		return nil
@@ -666,8 +667,8 @@ func collectDeprecated(mod vendormod.Module, versions []pkgsite.ModuleVersion) [
 
 // evaluateMalicious queries OSV for the module at its pinned version and
 // classifies the response. OSV returns 200 with an empty list for
-// unknown packages, so an empty result signals the common clean state,
-// not an error.
+// unknown packages. An empty result signals the common clean state, not an
+// error.
 func evaluateMalicious(ctx context.Context, client vulnsClient, mod vendormod.Module) ([]finding, error) {
 	vulns, err := client.Query(ctx, osv.Package{Name: mod.Path, Ecosystem: goEcosystem}, mod.Version)
 	if err != nil {

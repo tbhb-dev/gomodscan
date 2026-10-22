@@ -53,8 +53,8 @@ func Read(modroot string) ([]Module, error) {
 	path := filepath.Join(modroot, "vendor", "modules.txt")
 	f, err := os.Open(path)
 	if err != nil {
-		// The *fs.PathError from os.Open already names the operation
-		// and the path, so the wrap adds neither.
+		// Because the *fs.PathError from os.Open already includes the
+		// operation and the path, the wrap adds neither.
 		return nil, fmt.Errorf("vendor manifest: %w", err)
 	}
 	defer f.Close()
@@ -100,8 +100,8 @@ func Parse(r io.Reader) ([]Module, error) {
 
 // parseLine parses one declaration after the caller strips the
 // "# " prefix. Returns a false second return for replaced-to-local
-// modules and other shapes the parser can't handle, leaving the
-// caller to drop them.
+// modules and other forms the parser can't handle. The caller drops
+// those.
 //
 // Recognized forms with their resolved Module entry:
 //

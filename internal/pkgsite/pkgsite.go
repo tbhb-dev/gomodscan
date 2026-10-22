@@ -14,8 +14,8 @@
 // Field shapes mirror golang/pkgsite's
 // cmd/internal/pkgsite-cli/client/types_gen.go, the reference CLI
 // from the announcement blog post. The struct duplicates those
-// fields rather than importing the internal package, so the API
-// contract stays explicit here.
+// fields rather than importing the internal package. That keeps the
+// API contract explicit here.
 package pkgsite
 
 import (
@@ -66,11 +66,11 @@ var ErrUnexpectedStatus = errors.New("unexpected status from pkg.go.dev")
 // doesn't advance would drive the Versions pagination loop
 // forever while the result slice grows without bound. The client
 // treats it as a protocol violation rather than following it, and
-// reports it as a [retryhttp.Error] that carries the attempts and the
+// reports it as a [retryhttp.Error] that records the attempts and the
 // status of the request that delivered the repeated token. When the
 // on-disk cache served that page, the message says "cached response for"
-// ahead of the module path, so a fault that sent no request doesn't read
-// like a network failure.
+// ahead of the module path, so a fault from the cache doesn't read like a
+// network failure.
 var ErrStalePageToken = errors.New("pkg.go.dev returned a non-advancing nextPageToken")
 
 // defaultHTTPClient backs every [Client] value that doesn't override
@@ -85,7 +85,7 @@ var defaultHTTPClient = &http.Client{
 	),
 }
 
-// ModuleVersion mirrors the entry shape returned by
+// ModuleVersion mirrors the entry structure returned by
 // /v1/versions/{module}. Field names match the JSON keys the
 // upstream OpenAPI spec documents.
 type ModuleVersion struct {
@@ -131,11 +131,12 @@ func (c *Client) userAgent() string {
 	return DefaultUserAgent
 }
 
-// page wraps the paginated response shape the API returns. attempts and
-// status record the request that delivered the page, so a fault Versions
-// finds in it reports the same diagnostics a failed request would. source
+// page wraps the paginated response structure the API returns. attempts and
+// status record the request that delivered the page. A fault Versions finds
+// in it then reports the same diagnostics a failed request would. source
 // names the module, prefixed with "cached response for" when the on-disk
-// cache served the page, so those faults say where they came from.
+// cache served the page. With that prefix, those faults say where they came
+// from.
 type page struct {
 	Items         []ModuleVersion `json:"items"`
 	Total         int             `json:"total"`
@@ -198,10 +199,10 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		// A page the on-disk cache served made no network attempt in this
-		// run, so it reports 0 attempts and status 0, which keeps a 0 status
-		// meaning no HTTP response arrived, and the error text names the
-		// cache. Fetching again past the cache instead would need a bypass
+		// A page the on-disk cache served didn't need a network attempt in
+		// this run, so it reports 0 attempts and status 0. That keeps a 0
+		// status meaning no HTTP response arrived, and the error text mentions
+		// the cache. Fetching again past the cache instead would need a bypass
 		// path through cachehttp for a fault that lasts until the entry
 		// expires, and -no-cache already skips the cache.
 		status, source := resp.StatusCode, module

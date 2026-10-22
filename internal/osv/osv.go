@@ -13,7 +13,7 @@
 //
 // Field shapes mirror the upstream JSON-schema field names rather
 // than the protobuf-generated Go types in the [google/osv.dev]
-// repository, so the API contract stays explicit here without a
+// repository. That keeps the API contract explicit here without a
 // transitive dependency on that module.
 //
 // [OSV.dev API reference]: https://google.github.io/osv.dev/api/
@@ -47,7 +47,7 @@ const (
 // ErrUnexpectedStatus reports that OSV.dev returned an HTTP status
 // outside the contract (anything other than 200). The shared retry
 // transport already re-issued a 429 or a transient 5xx before this
-// fires, so the wrapped status reflects a persistent failure; the
+// fires. By then, the wrapped status reflects a persistent failure; the
 // message records the request URL and the status code for the caller
 // to surface. OSV returns 200 with an empty vulns array for any
 // package, including ones it doesn't recognize, so no separate
@@ -69,7 +69,7 @@ var defaultHTTPClient = &http.Client{
 	),
 }
 
-// Package locates a single module within an OSV ecosystem. For Go
+// Package locates one module within an OSV ecosystem. For Go
 // modules, set Ecosystem to "Go" and Name to the module path (such
 // as github.com/spf13/cobra).
 type Package struct {
@@ -78,9 +78,9 @@ type Package struct {
 }
 
 // Vulnerability mirrors the subset of the OSV record shape malscan
-// needs. The full schema carries many more fields (affected ranges,
+// needs. The full schema has many more fields (affected ranges,
 // references, severity); malscan only inspects the ID prefix and
-// surfaces summary text when present.
+// reports summary text when present.
 type Vulnerability struct {
 	ID        string   `json:"id"`
 	Aliases   []string `json:"aliases,omitempty"`
