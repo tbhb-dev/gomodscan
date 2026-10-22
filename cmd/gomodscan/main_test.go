@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -479,6 +480,11 @@ func dirEntries(t *testing.T, dir string) []string {
 	return names
 }
 
+// stderrLines splits the stderr a run wrote into its lines.
+func stderrLines(errOut string) []string {
+	return strings.Split(strings.TrimSuffix(errOut, "\n"), "\n")
+}
+
 // readOnlyDir returns a directory the test process can't create files in.
 // It skips the test where permission bits don't stop the writer: on Windows,
 // and as root. The directory stays empty, so t.TempDir's cleanup removes it
@@ -701,10 +707,13 @@ func TestRun_Output(t *testing.T) {
 		var out, errOut bytes.Buffer
 		opts := options{modroot: dir, format: formatSARIF, output: filepath.Join(outDir, "findings.sarif")}
 		rc, err := run(context.Background(), opts, retractedVersions(), &fakeVulnsClient{}, &out, &errOut)
-		require.Error(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		require.ErrorIs(t, err, os.ErrPermission)
-		assert.Contains(t, err.Error(), "emit findings: create temp file")
+		// The write error prints ahead of the stderr summary, which stays last.
+		lines := stderrLines(errOut.String())
+		require.Len(t, lines, 2)
+		assert.True(t, strings.HasPrefix(lines[0], "gomodscan: emit findings: create temp file"), lines[0])
+		assert.Equal(t, "gomodscan: 1 finding(s) across 1 module(s)", lines[1])
 		assert.Empty(t, out.String())
 		assert.Empty(t, dirEntries(t, outDir))
 	})
@@ -722,9 +731,9 @@ func TestRun_Output(t *testing.T) {
 		var out, errOut bytes.Buffer
 		opts := options{modroot: dir, format: formatText, output: target}
 		rc, err := run(context.Background(), opts, retractedVersions(), &fakeVulnsClient{}, &out, &errOut)
-		require.Error(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		assert.Contains(t, err.Error(), "emit findings: replace "+target)
+		assert.Contains(t, errOut.String(), "gomodscan: emit findings: replace "+target)
 		assert.Equal(t, []string{"findings.txt"}, dirEntries(t, outDir), "the temporary file should be gone")
 	})
 
@@ -928,7 +937,7 @@ func TestRun_SummaryJSON(t *testing.T) {
 			summaryJSON: path,
 		}
 		rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
-		require.Error(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, exitcode.ToolFailure, rc)
 		assert.FileExists(t, path)
 	})
@@ -943,8 +952,36 @@ func TestRun_SummaryJSON(t *testing.T) {
 		rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
 		require.NoError(t, err)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		assert.Contains(t, errOut.String(), "gomodscan: write summary: create temp file for")
+		// The write error prints ahead of the stderr summary, which stays last.
+		lines := stderrLines(errOut.String())
+		require.Len(t, lines, 2)
+		assert.True(t, strings.HasPrefix(lines[0], "gomodscan: write summary: create temp file for"), lines[0])
+		assert.Equal(t, "gomodscan: scanned 0 module(s), no findings", lines[1])
 		assert.Empty(t, dirEntries(t, outDir))
+	})
+
+	t.Run("both failed writes print ahead of the stderr summary", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeVendorModulesTxt(t, dir, "# example.com/explode v2.0.0\n## explicit\nexample.com/explode\n")
+		versions := &fakeVersionsClient{errors: map[string]error{"example.com/explode": exhaustedLookup()}}
+		outDir := readOnlyDir(t)
+		var out, errOut bytes.Buffer
+		opts := options{
+			modroot:     dir,
+			format:      formatText,
+			output:      filepath.Join(outDir, "findings.txt"),
+			summaryJSON: filepath.Join(outDir, "summary.json"),
+		}
+		rc, err := run(context.Background(), opts, versions, &fakeVulnsClient{}, &out, &errOut)
+		require.NoError(t, err)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		lines := stderrLines(errOut.String())
+		require.Len(t, lines, 4)
+		assert.Equal(t, "gomodscan: example.com/explode: lookup versions: "+exhaustedLookupMessage, lines[0])
+		assert.True(t, strings.HasPrefix(lines[1], "gomodscan: emit findings: create temp file for"), lines[1])
+		assert.True(t, strings.HasPrefix(lines[2], "gomodscan: write summary: create temp file for"), lines[2])
+		assert.Equal(t, "gomodscan: 1 module(s) could not be evaluated", lines[3])
 	})
 
 	t.Run("a scan that never starts records its error", func(t *testing.T) {
@@ -1007,7 +1044,12 @@ func TestRun_SummaryJSON(t *testing.T) {
 		rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
 		require.Error(t, err)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		assert.Contains(t, errOut.String(), "gomodscan: write summary: create temp file for")
+		// The cause prints first, then the write error, and neither path prints
+		// the stderr summary lines.
+		lines := stderrLines(errOut.String())
+		require.Len(t, lines, 2)
+		assert.Equal(t, "gomodscan: "+err.Error(), lines[0])
+		assert.True(t, strings.HasPrefix(lines[1], "gomodscan: write summary: create temp file for"), lines[1])
 		assert.Empty(t, dirEntries(t, outDir))
 	})
 }
@@ -1036,13 +1078,29 @@ func TestRealMain(t *testing.T) {
 		assert.Equal(t, "flag provided but not defined: -nonsense", *sum.Error)
 	})
 
+	t.Run("a bad flag followed by a failed summary write prints the cause first", func(t *testing.T) {
+		t.Parallel()
+		outDir := readOnlyDir(t)
+		var out, errOut bytes.Buffer
+		rc := realMain([]string{"--summary-json", filepath.Join(outDir, "summary.json"), "--nonsense"}, &out, &errOut)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		got := errOut.String()
+		cause := strings.Index(got, "flag provided but not defined: -nonsense")
+		write := strings.Index(got, "gomodscan: write summary: create temp file for")
+		require.GreaterOrEqual(t, cause, 0, got)
+		require.GreaterOrEqual(t, write, 0, got)
+		assert.Less(t, cause, write, "the flag error must print before the write error")
+		assert.NotContains(t, got, "module(s)")
+		assert.Empty(t, dirEntries(t, outDir))
+	})
+
 	t.Run("missing vendor tree prints the error line and returns ToolFailure", func(t *testing.T) {
 		t.Parallel()
 		var out, errOut bytes.Buffer
 		rc := realMain([]string{"-modroot", t.TempDir()}, &out, &errOut)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		// The error-log branch only fires when run returns a non-nil
-		// error. Asserting the prefix confirms that branch executed.
+		// run logs the cause of a scan that never started. Asserting the
+		// prefix confirms that line printed.
 		assert.Contains(t, errOut.String(), "gomodscan: read vendored modules:")
 	})
 
@@ -1082,6 +1140,33 @@ func TestRealMain(t *testing.T) {
 		assert.Contains(t, out.String(), "gomodscan ")
 		assert.Contains(t, out.String(), "commit:")
 		assert.Contains(t, out.String(), "date:")
+	})
+
+	t.Run("version flag writes the summary", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "summary.json")
+		var out, errOut bytes.Buffer
+		rc := realMain([]string{"--summary-json", path, "-version"}, &out, &errOut)
+		assert.Equal(t, exitcode.OK, rc)
+		assert.Empty(t, errOut.String())
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.JSONEq(t,
+			`{"schema":1,"version":"`+buildmeta.Get().Version+
+				`","modules":0,"findings":0,"unevaluated":0,"errors":[],"error":null}`,
+			string(got),
+		)
+	})
+
+	t.Run("version flag exits 2 when the summary write fails", func(t *testing.T) {
+		t.Parallel()
+		outDir := readOnlyDir(t)
+		var out, errOut bytes.Buffer
+		rc := realMain([]string{"-version", "--summary-json", filepath.Join(outDir, "summary.json")}, &out, &errOut)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		assert.Contains(t, out.String(), "gomodscan ")
+		assert.True(t, strings.HasPrefix(errOut.String(), "gomodscan: write summary: create temp file for"))
+		assert.Empty(t, dirEntries(t, outDir))
 	})
 }
 
