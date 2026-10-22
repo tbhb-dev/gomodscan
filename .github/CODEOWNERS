@@ -6,4 +6,3 @@
 /.github/rulesets/          @tbhb
 /.agents/agent-skills.conf  @tbhb
 /.claude/settings*.json     @tbhb
-/.codex/config.toml         @tbhb

@@ -9,6 +9,8 @@ package owners_test
 import (
 	"io/fs"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -101,14 +103,28 @@ func existsInRepo(t *testing.T, root, pattern string) bool {
 	return found
 }
 
+// globMatchesTracked reports whether a CODEOWNERS glob matches at least one
+// path that git tracks, so a file outside the index can't pass it.
+func globMatchesTracked(t *testing.T, root, pattern string) bool {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "git", "ls-files")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	require.NoError(t, err)
+
+	glob := strings.TrimPrefix(pattern, "/")
+	for tracked := range strings.SplitSeq(string(out), "\n") {
+		if ok, matchErr := path.Match(glob, tracked); matchErr == nil && ok {
+			return true
+		}
+	}
+
+	return false
+}
+
 func TestCodeownersPathsExist(t *testing.T) {
 	t.Parallel()
-
-	// The policy reserves this ahead of its file: the repository has no Codex
-	// configuration.
-	notYetPresent := map[string]bool{
-		"/.codex/config.toml": true,
-	}
 
 	root := repoRoot(t)
 	patterns := codeownersPatterns(t)
@@ -118,7 +134,10 @@ func TestCodeownersPathsExist(t *testing.T) {
 		t.Run(pattern, func(t *testing.T) {
 			t.Parallel()
 
-			if strings.Contains(pattern, "*") || notYetPresent[pattern] {
+			if strings.Contains(pattern, "*") {
+				assert.True(t, globMatchesTracked(t, root, pattern),
+					"CODEOWNERS glob %s matches no tracked path", pattern)
+
 				return
 			}
 			assert.True(t, existsInRepo(t, root, pattern), "CODEOWNERS pattern %s matches nothing", pattern)
@@ -211,7 +230,6 @@ func TestOwnerPathsMatchesPolicy(t *testing.T) {
 		{".agents/agent-skills.conf", true},
 		{".claude/settings.json", true},
 		{".claude/settings.local.json", true},
-		{".codex/config.toml", true},
 
 		{"go.mod", false},
 		{"go.sum", false},
