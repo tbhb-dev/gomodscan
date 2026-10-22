@@ -1,13 +1,8 @@
-# Review routing for gomodscan. GitHub applies the last matching
-# rule, so the supply-chain rules below override the default for the
-# paths they name.
+# Review routing for gomodscan. Only paths where every change needs the
+# owner's review are listed. Paths where only part of a change is
+# sensitive are not listed here, so there is no catch-all rule.
 
-# Default owner for everything.
-*           @tbhb
-
-# Supply-chain and CI surface. The /.github/ rule already covers
-# renovate.json5 and every workflow, so neither needs its own line.
-/.github/   @tbhb
-/vendor/    @tbhb
-/go.mod     @tbhb
-/go.sum     @tbhb
+/.github/CODEOWNERS         @tbhb
+/.github/rulesets/          @tbhb
+/.agents/agent-skills.conf  @tbhb
+/.claude/settings*.json     @tbhb
