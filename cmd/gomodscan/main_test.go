@@ -1044,7 +1044,12 @@ func TestRun_SummaryJSON(t *testing.T) {
 		rc, err := run(context.Background(), opts, &fakeVersionsClient{}, &fakeVulnsClient{}, &out, &errOut)
 		require.Error(t, err)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		assert.Contains(t, errOut.String(), "gomodscan: write summary: create temp file for")
+		// The cause prints first, then the write error, and neither path prints
+		// the stderr summary lines.
+		lines := stderrLines(errOut.String())
+		require.Len(t, lines, 2)
+		assert.Equal(t, "gomodscan: "+err.Error(), lines[0])
+		assert.True(t, strings.HasPrefix(lines[1], "gomodscan: write summary: create temp file for"), lines[1])
 		assert.Empty(t, dirEntries(t, outDir))
 	})
 }
@@ -1073,13 +1078,29 @@ func TestRealMain(t *testing.T) {
 		assert.Equal(t, "flag provided but not defined: -nonsense", *sum.Error)
 	})
 
+	t.Run("a bad flag followed by a failed summary write prints the cause first", func(t *testing.T) {
+		t.Parallel()
+		outDir := readOnlyDir(t)
+		var out, errOut bytes.Buffer
+		rc := realMain([]string{"--summary-json", filepath.Join(outDir, "summary.json"), "--nonsense"}, &out, &errOut)
+		assert.Equal(t, exitcode.ToolFailure, rc)
+		got := errOut.String()
+		cause := strings.Index(got, "flag provided but not defined: -nonsense")
+		write := strings.Index(got, "gomodscan: write summary: create temp file for")
+		require.GreaterOrEqual(t, cause, 0, got)
+		require.GreaterOrEqual(t, write, 0, got)
+		assert.Less(t, cause, write, "the flag error must print before the write error")
+		assert.NotContains(t, got, "module(s)")
+		assert.Empty(t, dirEntries(t, outDir))
+	})
+
 	t.Run("missing vendor tree prints the error line and returns ToolFailure", func(t *testing.T) {
 		t.Parallel()
 		var out, errOut bytes.Buffer
 		rc := realMain([]string{"-modroot", t.TempDir()}, &out, &errOut)
 		assert.Equal(t, exitcode.ToolFailure, rc)
-		// The error-log branch only fires when run returns a non-nil
-		// error. Asserting the prefix confirms that branch executed.
+		// run logs the cause of a scan that never started. Asserting the
+		// prefix confirms that line printed.
 		assert.Contains(t, errOut.String(), "gomodscan: read vendored modules:")
 	})
 

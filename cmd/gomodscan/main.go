@@ -286,7 +286,7 @@ func main() {
 // realMain wraps the imperative flag-parsing and exit-code wiring in a
 // function that the test harness can drive. The split keeps main itself
 // trivial enough to verify by inspection and lets mutation testing
-// exercise the error-log branch via real arguments and writers rather
+// exercise the error paths via real arguments and writers rather
 // than the exit call.
 func realMain(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet(toolName, flag.ContinueOnError)
@@ -339,7 +339,9 @@ func realMain(args []string, out, errOut io.Writer) int {
 		errOut,
 	)
 	if err != nil {
-		fmt.Fprintf(errOut, "%s: %v\n", toolName, err)
+		// run has already logged the cause, ahead of any summary-write error,
+		// and returned the tool-failure code.
+		return exitcode.ToolFailure
 	}
 	return rc
 }
@@ -377,8 +379,10 @@ func newVersionsClient(noCache bool, cacheDir string) *pkgsite.Client {
 // which turns the run into a tool failure once the findings and the stderr
 // summary are out. An unknown -format, a failure to read the module set, emit
 // the findings, or write the -summary-json file also returns a tool-failure
-// code. A failed write logs to errOut itself, ahead of the stderr summary, so
-// the summary stays the last line, and run returns a nil error for it.
+// code. For a scan that never starts, run logs the cause to errOut and
+// returns it as the error. A failed write logs to errOut itself, ahead of the
+// stderr summary, so the summary stays the last line, and run returns a nil
+// error for it.
 func run(
 	ctx context.Context,
 	opts options,
@@ -387,12 +391,12 @@ func run(
 	out, errOut io.Writer,
 ) (int, error) {
 	if err := checkFormat(opts.format); err != nil {
-		return abort(opts.summaryJSON, err, errOut), err
+		return abortRun(opts.summaryJSON, err, errOut), err
 	}
 	mods, err := vendormod.Read(opts.modroot)
 	if err != nil {
 		err = fmt.Errorf("read vendored modules: %w", err)
-		return abort(opts.summaryJSON, err, errOut), err
+		return abortRun(opts.summaryJSON, err, errOut), err
 	}
 
 	hits, sum := scan(ctx, mods, versions, vulns, errOut)
@@ -423,8 +427,16 @@ func checkFormat(format string) error {
 	return nil
 }
 
+// abortRun logs cause, then aborts, so a failed summary write prints after the
+// cause, the order a flag-parse failure also gives.
+func abortRun(summaryPath string, cause error, errOut io.Writer) int {
+	fmt.Fprintf(errOut, "%s: %v\n", toolName, cause)
+	return abort(summaryPath, cause, errOut)
+}
+
 // abort ends a run that stopped before its scan began. When a -summary-json
-// path is set, it writes a summary that carries cause as its error. It
+// path is set, it writes a summary that carries cause as its error, and a
+// failed write logs after the cause the caller has already printed. It
 // returns the tool-failure code.
 func abort(summaryPath string, cause error, errOut io.Writer) int {
 	if summaryPath != "" {
