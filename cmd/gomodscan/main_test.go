@@ -222,9 +222,9 @@ func TestEmitSARIF_RegistersAllRulesAndEmitsResults(t *testing.T) {
 	assert.Contains(t, out, `"name": "example.com/c@v2.0.0"`)
 	assert.Contains(t, out, `"latest": "v0.2.0"`)
 	assert.Contains(t, out, `"id": "MAL-2025-0001"`)
-	// The results record the vendor manifest as their physical
-	// location, with the module's line threaded onto the region so
-	// Code Scanning anchors each finding on the real file.
+	// Each result records the vendor manifest as its physical location,
+	// with the module's line threaded onto the region so Code Scanning
+	// anchors each finding on the real file.
 	assert.Contains(t, out, `"uri": "vendor/modules.txt"`)
 	assert.Contains(t, out, `"startLine": 10`)
 	assert.Contains(t, out, `"startLine": 14`)
