@@ -48,7 +48,7 @@ const (
 	AttemptTimeout = 30 * time.Second
 
 	// jitterFactor randomizes each backoff delay so a batch of lookups
-	// doesn't retry at the same moment.
+	// doesn't retry in step.
 	jitterFactor = 0.25
 )
 

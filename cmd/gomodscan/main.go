@@ -33,21 +33,20 @@
 // into place. A reader never sees a partial file. Both files end up mode
 // 0644, less any bits the process's file creation mask clears.
 //
-// The -summary-json flag writes a machine-readable summary of the run on
-// every exit status. The JSON object, at schema 1, carries the build version,
-// the modules, findings, and unevaluated counts, an errors array, and an error
+// The -summary-json flag writes a machine-readable summary of the run on every
+// exit status. The JSON object, at schema 1, carries the build version, the
+// modules, findings, and unevaluated counts, an errors array, and an error
 // field. Each errors entry records one registry lookup that still failed after
 // the retries: the module path and version, the lookup ("versions" for
 // pkg.go.dev or "vulns" for OSV), the error message, the attempts, and the
 // last HTTP status, which reads 0 when the final attempt ended without a
-// response. The
-// attempts count only requests this run sent, so a lookup that failed on a
-// pkg.go.dev response from the on-disk cache records 0 attempts and a last
-// status of 0, and its message mentions the cache. The top-level error stays
-// null once the scan runs. With -version, which scans nothing, the counts stay
-// 0 and the error is null. When the scan never starts, because of a bad
-// argument or an unreadable vendor/modules.txt, error holds the reason and the
-// counts stay 0.
+// response. The attempts count only requests this run sent, so a lookup that
+// failed on a pkg.go.dev response from the on-disk cache records 0 attempts
+// and a last status of 0, and its message mentions the cache. The top-level
+// error is null once the scan runs. With -version, which scans nothing, the
+// counts stay 0 and the error is null. When the scan never starts, because of
+// a bad argument or an unreadable vendor/modules.txt, error holds the reason
+// and the counts stay 0.
 //
 // A failed -o or -summary-json write prints its error ahead of the stderr
 // summary and exits 2. The summary is still the last line of the run.
