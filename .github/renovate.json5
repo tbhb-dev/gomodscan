@@ -18,8 +18,8 @@
   prConcurrentLimit: 0,
   prHourlyLimit: 0,
   extends: [
-    "github>tbhb-dev/devtools//.github/renovate-config.json5#830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9", // v0.14.0
-    "github>tbhb-dev/devtools//.github/renovate-go-config.json5#830abe6dadce3e0b4c7ab4c5065560d2c3c76ed9", // v0.14.0
+    "github>tbhb-dev/devtools//.github/renovate-config.json5#1dde4f53da5fcbee3876dc2cb67da59e52b63479", // v0.15.0
+    "github>tbhb-dev/devtools//.github/renovate-go-config.json5#1dde4f53da5fcbee3876dc2cb67da59e52b63479", // v0.15.0
   ],
 
   // The repository keeps go 1.26 and toolchain go1.26.5 on purpose.
