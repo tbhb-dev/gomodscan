@@ -44,7 +44,8 @@ import (
 )
 
 // FromCacheHeader marks a response the transport served from the on-disk
-// store rather than the origin. Production code ignores it; tests and curious
+// store rather than the origin. The pkg.go.dev client reads it to report a
+// cached response as one that made no network attempt, and tests and curious
 // operators read it to tell a hit from a miss.
 const FromCacheHeader = "X-From-Cache"
 

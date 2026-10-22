@@ -40,9 +40,16 @@
 // the retries: the module path and version, the lookup ("versions" for
 // pkg.go.dev or "vulns" for OSV), the error message, the attempts, and the
 // last HTTP status, which reads 0 when the final attempt got no response. The
-// top-level error stays null once the scan runs. When the scan never starts,
-// because of a bad argument or an unreadable vendor/modules.txt, error holds
-// the reason and the counts stay 0.
+// attempts count only requests this run sent, so a lookup that failed on a
+// pkg.go.dev response from the on-disk cache records 0 attempts and a last
+// status of 0, and its message names the cache. The top-level error stays
+// null once the scan runs. With -version, which scans nothing, the counts stay
+// 0 and the error stays null. When the scan never starts, because of a bad
+// argument or an unreadable vendor/modules.txt, error holds the reason and the
+// counts stay 0.
+//
+// A failed -o or -summary-json write prints its error ahead of the stderr
+// summary, so the summary stays the last line of the run, and exits 2.
 //
 // gomodscan exits 0 when every module came back clean and 1 when at least one
 // finding surfaced. It exits 2 when any module couldn't be evaluated after the
@@ -220,7 +227,8 @@ type options struct {
 // after the retries. Lookup names the registry call. Attempts and LastStatus
 // come from the [retryhttp.Error] the client returns, and stay 0 for a
 // failure that never reached the transport. A LastStatus of 0 also means the
-// last attempt got no HTTP response.
+// last attempt got no HTTP response, or that the response came from the
+// on-disk cache rather than an attempt.
 type lookupError struct {
 	Module     string `json:"module"`
 	Lookup     string `json:"lookup"`
@@ -310,6 +318,15 @@ func realMain(args []string, out, errOut io.Writer) int {
 	if *showVersion {
 		info := buildmeta.Get()
 		fmt.Fprintf(out, "%s %s\ncommit: %s\ndate:   %s\n", toolName, info.Version, info.Commit, info.Date)
+		// -summary-json promises a summary on every exit status, so -version
+		// writes one too. It scanned nothing, so the counts stay 0 and the
+		// error stays null.
+		if opts.summaryJSON != "" {
+			if err := writeSummary(opts.summaryJSON, newSummary(0)); err != nil {
+				fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, err)
+				return exitcode.ToolFailure
+			}
+		}
 		return exitcode.OK
 	}
 
@@ -360,7 +377,8 @@ func newVersionsClient(noCache bool, cacheDir string) *pkgsite.Client {
 // which turns the run into a tool failure once the findings and the stderr
 // summary are out. An unknown -format, a failure to read the module set, emit
 // the findings, or write the -summary-json file also returns a tool-failure
-// code.
+// code. A failed write logs to errOut itself, ahead of the stderr summary, so
+// the summary stays the last line, and run returns a nil error for it.
 func run(
 	ctx context.Context,
 	opts options,
@@ -378,14 +396,22 @@ func run(
 	}
 
 	hits, sum := scan(ctx, mods, versions, vulns, errOut)
-	rc, err := report(opts, hits, sum, out, errOut)
+	wrote := true
+	if emitErr := writeFindings(out, opts.output, opts.format, hits); emitErr != nil {
+		fmt.Fprintf(errOut, "%s: emit findings: %v\n", toolName, emitErr)
+		wrote = false
+	}
 	if opts.summaryJSON != "" {
 		if sumErr := writeSummary(opts.summaryJSON, sum); sumErr != nil {
 			fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, sumErr)
-			return exitcode.ToolFailure, err
+			wrote = false
 		}
 	}
-	return rc, err
+	rc := report(sum, errOut)
+	if !wrote {
+		return exitcode.ToolFailure, nil
+	}
+	return rc, nil
 }
 
 // checkFormat rejects a -format value outside the {text, sarif} allowlist
@@ -446,28 +472,24 @@ func scan(
 	return hits, sum
 }
 
-// report emits the findings and the stderr summary, then picks the exit code.
+// report prints the stderr summary, then picks the exit code.
 // The findings line still prints when some modules went unevaluated,
 // but the unevaluated line comes last and the run exits 2, because the
 // findings list may be missing hits from those modules. The no-findings line
 // only prints when every module got evaluated.
-func report(opts options, hits []finding, sum *summary, out, errOut io.Writer) (int, error) {
-	if emitErr := writeFindings(out, opts.output, opts.format, hits); emitErr != nil {
-		return exitcode.ToolFailure, fmt.Errorf("emit findings: %w", emitErr)
-	}
-
-	if len(hits) > 0 {
-		fmt.Fprintf(errOut, "%s: %d finding(s) across %d module(s)\n", toolName, len(hits), sum.Modules)
+func report(sum *summary, errOut io.Writer) int {
+	if sum.Findings > 0 {
+		fmt.Fprintf(errOut, "%s: %d finding(s) across %d module(s)\n", toolName, sum.Findings, sum.Modules)
 	}
 	if sum.Unevaluated > 0 {
 		fmt.Fprintf(errOut, "%s: %d module(s) could not be evaluated\n", toolName, sum.Unevaluated)
-		return exitcode.ToolFailure, nil
+		return exitcode.ToolFailure
 	}
-	if len(hits) > 0 {
-		return exitcode.Findings, nil
+	if sum.Findings > 0 {
+		return exitcode.Findings
 	}
 	fmt.Fprintf(errOut, "%s: scanned %d module(s), no findings\n", toolName, sum.Modules)
-	return exitcode.OK, nil
+	return exitcode.OK
 }
 
 // writeFindings emits the findings to out, or to the output file when one

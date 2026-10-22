@@ -247,6 +247,28 @@ func runVersionsCase(t *testing.T, tc versionsCase) {
 	}
 }
 
+// TestVersions_StalePageTokenReportsItsRequest checks that a repeated page
+// token reports the attempt and the 200 of the request that delivered it,
+// rather than the zero values that read as no HTTP response.
+func TestVersions_StalePageTokenReportsItsRequest(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mustWrite(t, w, `{"items":[],"total":0,"nextPageToken":"STUCK"}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &pkgsite.Client{BaseURL: srv.URL}
+	_, err := c.Versions(t.Context(), "example.com/stuck")
+	require.ErrorIs(t, err, pkgsite.ErrStalePageToken)
+	var re *retryhttp.Error
+	require.ErrorAs(t, err, &re)
+	assert.Equal(t, 1, re.Attempts)
+	assert.Equal(t, http.StatusOK, re.LastStatus)
+	assert.Contains(t, err.Error(), "example.com/stuck (attempts: 1, last status: 200)")
+}
+
 // TestVersions_ContextCancelled lives outside the table because
 // the timing dance (slow handler vs. short deadline) doesn't fit
 // the synchronous case shape the table assumes.

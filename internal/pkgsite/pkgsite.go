@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/tbhb-dev/gomodscan/internal/cachehttp"
 	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
 )
 
@@ -64,7 +65,9 @@ var ErrUnexpectedStatus = errors.New("unexpected status from pkg.go.dev")
 // nextPageToken identical to the one just requested. A cursor that
 // doesn't advance would drive the Versions pagination loop
 // forever while the result slice grows without bound. The client
-// treats it as a protocol violation rather than following it.
+// treats it as a protocol violation rather than following it, and
+// reports it as a [retryhttp.Error] that carries the attempts and the
+// status of the request that delivered the repeated token.
 var ErrStalePageToken = errors.New("pkg.go.dev returned a non-advancing nextPageToken")
 
 // defaultHTTPClient backs every [Client] value that doesn't override
@@ -125,11 +128,16 @@ func (c *Client) userAgent() string {
 	return DefaultUserAgent
 }
 
-// page wraps the paginated response shape the API returns.
+// page wraps the paginated response shape the API returns. attempts and
+// status record the request that delivered the page, so a fault Versions
+// finds in it reports the same diagnostics a failed request would.
 type page struct {
 	Items         []ModuleVersion `json:"items"`
 	Total         int             `json:"total"`
 	NextPageToken string          `json:"nextPageToken,omitempty"`
+
+	attempts int
+	status   int
 }
 
 // Versions returns every ModuleVersion record pkg.go.dev knows for
@@ -152,7 +160,11 @@ func (c *Client) Versions(ctx context.Context, module string) ([]ModuleVersion, 
 		// sent means the API isn't advancing, which would loop forever
 		// and exhaust memory. Refuse it instead of following it.
 		if p.NextPageToken == token {
-			return nil, fmt.Errorf("%w: %s", ErrStalePageToken, module)
+			return nil, &retryhttp.Error{
+				Err:        fmt.Errorf("%w: %s", ErrStalePageToken, module),
+				Attempts:   p.attempts,
+				LastStatus: p.status,
+			}
 		}
 		token = p.NextPageToken
 	}
@@ -180,14 +192,25 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 
 	switch resp.StatusCode {
 	case http.StatusOK:
+		// A page the on-disk cache served made no network attempt in this
+		// run, so it reports 0 attempts and status 0, which keeps a 0 status
+		// meaning no HTTP response arrived, and the error text names the
+		// cache. Fetching again past the cache instead would need a bypass
+		// path through cachehttp for a fault that lasts until the entry
+		// expires, and -no-cache already skips the cache.
+		status, source := resp.StatusCode, module
+		if resp.Header.Get(cachehttp.FromCacheHeader) != "" {
+			status, source = 0, "cached response for "+module
+		}
 		var p page
 		if decErr := json.NewDecoder(resp.Body).Decode(&p); decErr != nil {
 			return nil, &retryhttp.Error{
-				Err:        fmt.Errorf("decode %s: %w", module, decErr),
+				Err:        fmt.Errorf("decode %s: %w", source, decErr),
 				Attempts:   attempts(),
-				LastStatus: resp.StatusCode,
+				LastStatus: status,
 			}
 		}
+		p.attempts, p.status = attempts(), status
 		return &p, nil
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, module)

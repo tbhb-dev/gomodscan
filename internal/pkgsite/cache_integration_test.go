@@ -102,3 +102,72 @@ func TestVersions_CacheStackDoesNotCacheNotFound(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries, "a no-store 404 must never write a cache file")
 }
+
+// TestVersions_CacheStackReportsCachedFailures checks the diagnostics of a
+// page fault, first from the origin and then from the on-disk cache. From the
+// origin, the fault reports the one attempt and the 200 it got. From the
+// cache, it made no attempt, so it reports 0 attempts and status 0, which
+// keeps a 0 status meaning no HTTP response arrived.
+func TestVersions_CacheStackReportsCachedFailures(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		body       string
+		wantErr    error
+		wantCached string
+	}{
+		{
+			name:       "decode failure",
+			body:       "not json at all",
+			wantCached: "decode cached response for example.com/m: ",
+		},
+		{
+			name:    "stale page token",
+			body:    `{"items":[],"total":0,"nextPageToken":"STUCK"}`,
+			wantErr: pkgsite.ErrStalePageToken,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var originHits atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				originHits.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+				mustWrite(t, w, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+
+			transport := cachehttp.NewTransport(
+				retryhttp.NewTransport(
+					http.DefaultTransport, retryhttp.InitialDelay, retryhttp.MaxDelay, retryhttp.AttemptTimeout,
+				),
+				cachehttp.NewDiskStore(t.TempDir()),
+			)
+			c := &pkgsite.Client{BaseURL: srv.URL, HTTPClient: &http.Client{Transport: transport}}
+
+			_, err := c.Versions(t.Context(), "example.com/m")
+			var re *retryhttp.Error
+			require.ErrorAs(t, err, &re)
+			assert.Equal(t, 1, re.Attempts)
+			assert.Equal(t, http.StatusOK, re.LastStatus)
+			assert.NotContains(t, err.Error(), "cached")
+			hits := originHits.Load()
+
+			_, err = c.Versions(t.Context(), "example.com/m")
+			require.ErrorAs(t, err, &re)
+			assert.Equal(t, hits, originHits.Load(), "the repeat lookup must come from the cache")
+			assert.Zero(t, re.Attempts)
+			assert.Zero(t, re.LastStatus)
+			assert.Contains(t, err.Error(), "(attempts: 0, last status: 0, no HTTP response)")
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			}
+			if tc.wantCached != "" {
+				assert.Contains(t, err.Error(), tc.wantCached)
+			}
+		})
+	}
+}
