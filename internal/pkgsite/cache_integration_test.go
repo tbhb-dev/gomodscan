@@ -115,17 +115,21 @@ func TestVersions_CacheStackReportsCachedFailures(t *testing.T) {
 		name       string
 		body       string
 		wantErr    error
+		wantFresh  string
 		wantCached string
 	}{
 		{
 			name:       "decode failure",
 			body:       "not json at all",
+			wantFresh:  "decode example.com/m: ",
 			wantCached: "decode cached response for example.com/m: ",
 		},
 		{
-			name:    "stale page token",
-			body:    `{"items":[],"total":0,"nextPageToken":"STUCK"}`,
-			wantErr: pkgsite.ErrStalePageToken,
+			name:       "stale page token",
+			body:       `{"items":[],"total":0,"nextPageToken":"STUCK"}`,
+			wantErr:    pkgsite.ErrStalePageToken,
+			wantFresh:  "non-advancing nextPageToken: example.com/m (attempts: 1,",
+			wantCached: "non-advancing nextPageToken: cached response for example.com/m (attempts: 0,",
 		},
 	}
 	for _, tc := range cases {
@@ -154,6 +158,7 @@ func TestVersions_CacheStackReportsCachedFailures(t *testing.T) {
 			assert.Equal(t, 1, re.Attempts)
 			assert.Equal(t, http.StatusOK, re.LastStatus)
 			assert.NotContains(t, err.Error(), "cached")
+			assert.Contains(t, err.Error(), tc.wantFresh)
 			hits := originHits.Load()
 
 			_, err = c.Versions(t.Context(), "example.com/m")
@@ -165,9 +170,7 @@ func TestVersions_CacheStackReportsCachedFailures(t *testing.T) {
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 			}
-			if tc.wantCached != "" {
-				assert.Contains(t, err.Error(), tc.wantCached)
-			}
+			assert.Contains(t, err.Error(), tc.wantCached)
 		})
 	}
 }

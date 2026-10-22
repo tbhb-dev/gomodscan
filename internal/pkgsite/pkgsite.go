@@ -67,7 +67,10 @@ var ErrUnexpectedStatus = errors.New("unexpected status from pkg.go.dev")
 // forever while the result slice grows without bound. The client
 // treats it as a protocol violation rather than following it, and
 // reports it as a [retryhttp.Error] that carries the attempts and the
-// status of the request that delivered the repeated token.
+// status of the request that delivered the repeated token. When the
+// on-disk cache served that page, the message says "cached response for"
+// ahead of the module path, so a fault that sent no request doesn't read
+// like a network failure.
 var ErrStalePageToken = errors.New("pkg.go.dev returned a non-advancing nextPageToken")
 
 // defaultHTTPClient backs every [Client] value that doesn't override
@@ -130,7 +133,9 @@ func (c *Client) userAgent() string {
 
 // page wraps the paginated response shape the API returns. attempts and
 // status record the request that delivered the page, so a fault Versions
-// finds in it reports the same diagnostics a failed request would.
+// finds in it reports the same diagnostics a failed request would. source
+// names the module, prefixed with "cached response for" when the on-disk
+// cache served the page, so those faults say where they came from.
 type page struct {
 	Items         []ModuleVersion `json:"items"`
 	Total         int             `json:"total"`
@@ -138,6 +143,7 @@ type page struct {
 
 	attempts int
 	status   int
+	source   string
 }
 
 // Versions returns every ModuleVersion record pkg.go.dev knows for
@@ -161,7 +167,7 @@ func (c *Client) Versions(ctx context.Context, module string) ([]ModuleVersion, 
 		// and exhaust memory. Refuse it instead of following it.
 		if p.NextPageToken == token {
 			return nil, &retryhttp.Error{
-				Err:        fmt.Errorf("%w: %s", ErrStalePageToken, module),
+				Err:        fmt.Errorf("%w: %s", ErrStalePageToken, p.source),
 				Attempts:   p.attempts,
 				LastStatus: p.status,
 			}
@@ -210,7 +216,7 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 				LastStatus: status,
 			}
 		}
-		p.attempts, p.status = attempts(), status
+		p.attempts, p.status, p.source = attempts(), status, source
 		return &p, nil
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, module)
