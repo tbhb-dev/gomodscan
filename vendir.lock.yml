@@ -2,18 +2,18 @@ apiVersion: vendir.k14s.io/v1alpha1
 directories:
 - contents:
   - git:
-      commitTitle: 'chore(version): v0.15.0 [skip ci]'
-      sha: 1dde4f53da5fcbee3876dc2cb67da59e52b63479
+      commitTitle: 'chore(version): v0.17.0 [skip ci]'
+      sha: 4691c20b5500e73cc1a99c49737d18cf1876447f
       tags:
-      - v0.15.0
+      - v0.17.0
     path: .
   path: .config/mise/conf.d
 - contents:
   - git:
-      commitTitle: 'chore(version): v0.15.0 [skip ci]'
-      sha: 1dde4f53da5fcbee3876dc2cb67da59e52b63479
+      commitTitle: 'chore(version): v0.17.0 [skip ci]'
+      sha: 4691c20b5500e73cc1a99c49737d18cf1876447f
       tags:
-      - v0.15.0
+      - v0.17.0
     path: .
   path: .devtools
 kind: LockConfig
