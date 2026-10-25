@@ -2,15 +2,14 @@
 // Copyright Tony Burns
 
 // Package owners_test checks that .github/CODEOWNERS and the owner path
-// pattern in .agents/agent-skills.conf describe one owner-review policy. The
-// package contains only tests.
+// pattern in .agents/agent-skills.conf describe one owner-review policy: the
+// file that defines ownership and the file that defines the merge policy
+// need the owner. Other paths don't. The package contains only tests.
 package owners_test
 
 import (
-	"io/fs"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -19,6 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// ownerFiles returns the only two paths that need the owner.
+func ownerFiles() []string { return []string{".github/CODEOWNERS", ".agents/agent-skills.conf"} }
 
 // repoRoot walks up from the working directory, which go test sets to this
 // package's directory, to the directory that holds go.mod.
@@ -55,8 +57,12 @@ func readRepoFile(t *testing.T, name string) string {
 func codeownersPatterns(t *testing.T) []string {
 	t.Helper()
 
+	return rulePatterns(readRepoFile(t, ".github/CODEOWNERS"))
+}
+
+func rulePatterns(content string) []string {
 	var patterns []string
-	for line := range strings.SplitSeq(readRepoFile(t, ".github/CODEOWNERS"), "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
 			continue
@@ -67,180 +73,150 @@ func codeownersPatterns(t *testing.T) []string {
 	return patterns
 }
 
-// existsInRepo reports whether a CODEOWNERS pattern without a glob points at
-// a path in the repository. A pattern with no inner slash matches at any depth.
-func existsInRepo(t *testing.T, root, pattern string) bool {
-	t.Helper()
-
-	name := strings.Trim(pattern, "/")
-	if strings.HasPrefix(pattern, "/") || strings.Contains(name, "/") {
-		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(name)))
-
-		return err == nil
-	}
-
-	found := false
-
-	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "vendor") {
-			return fs.SkipDir
-		}
-
-		if d.Name() == name {
-			found = true
-
-			return fs.SkipAll
-		}
-
-		return nil
-	})
-	require.NoError(t, err)
-
-	return found
-}
-
-// globMatchesTracked reports whether a CODEOWNERS glob matches at least one
-// path that git tracks, so a file outside the index can't pass it.
-func globMatchesTracked(t *testing.T, root, pattern string) bool {
+// trackedFiles returns the paths that git tracks, so a file outside the index
+// can't back a CODEOWNERS entry.
+func trackedFiles(t *testing.T) map[string]bool {
 	t.Helper()
 
 	cmd := exec.CommandContext(t.Context(), "git", "ls-files")
-	cmd.Dir = root
+	cmd.Dir = repoRoot(t)
 	out, err := cmd.Output()
 	require.NoError(t, err)
 
-	glob := strings.TrimPrefix(pattern, "/")
-	for tracked := range strings.SplitSeq(string(out), "\n") {
-		if ok, matchErr := path.Match(glob, tracked); matchErr == nil && ok {
-			return true
+	tracked := map[string]bool{}
+	for name := range strings.SplitSeq(string(out), "\n") {
+		tracked[name] = true
+	}
+
+	return tracked
+}
+
+// checkEntries reports how a CODEOWNERS entry list departs from the policy.
+// It flags a catch-all rule and an entry beyond the two owner files. It also
+// flags a missing owner file and an entry for a file git doesn't track.
+func checkEntries(patterns []string, tracked map[string]bool) []string {
+	var problems []string
+
+	want := map[string]bool{}
+	for _, name := range ownerFiles() {
+		want["/"+name] = false
+	}
+
+	for _, pattern := range patterns {
+		if pattern == "*" || pattern == "/*" || pattern == "**" {
+			problems = append(problems, "catch-all rule "+pattern)
+		}
+
+		if _, ok := want[pattern]; ok {
+			want[pattern] = true
+		} else {
+			problems = append(problems, "unexpected entry "+pattern)
+		}
+
+		if !tracked[strings.TrimPrefix(pattern, "/")] {
+			problems = append(problems, "no tracked file for "+pattern)
 		}
 	}
 
-	return false
+	for pattern, seen := range want {
+		if !seen {
+			problems = append(problems, "missing entry "+pattern)
+		}
+	}
+
+	return problems
 }
 
-func TestCodeownersPathsExist(t *testing.T) {
+func TestCodeownersListsExactlyTheOwnerFiles(t *testing.T) {
 	t.Parallel()
 
-	root := repoRoot(t)
-	patterns := codeownersPatterns(t)
-	require.NotEmpty(t, patterns)
+	assert.Empty(t, checkEntries(codeownersPatterns(t), trackedFiles(t)))
+}
 
-	for _, pattern := range patterns {
-		t.Run(pattern, func(t *testing.T) {
-			t.Parallel()
+// TestCheckEntriesCatchesDrift feeds the entry check one broken list per case,
+// so the check on the real file can't pass by accident. The broken lists
+// have a catch-all rule, a tracked file that isn't an owner file, a file git
+// doesn't track, or a dropped owner file. The first case is the intact pair,
+// which has to come back clean, so a check that flags everything fails too.
+func TestCheckEntriesCatchesDrift(t *testing.T) {
+	t.Parallel()
 
-			if strings.Contains(pattern, "*") {
-				assert.True(t, globMatchesTracked(t, root, pattern),
-					"CODEOWNERS glob %s matches no tracked path", pattern)
+	tracked := map[string]bool{
+		".github/CODEOWNERS":        true,
+		".agents/agent-skills.conf": true,
+		"go.mod":                    true,
+	}
+	base := []string{"/.github/CODEOWNERS", "/.agents/agent-skills.conf"}
 
-				return
-			}
-			assert.True(t, existsInRepo(t, root, pattern), "CODEOWNERS pattern %s matches nothing", pattern)
-		})
+	cases := []struct {
+		name     string
+		patterns []string
+		want     string
+	}{
+		{"exact pair", base, ""},
+		{"catch-all", append([]string{"*"}, base...), "catch-all rule *"},
+		{"extra tracked entry", append([]string{"/go.mod"}, base...), "unexpected entry /go.mod"},
+		{"entry naming no tracked file", append([]string{"/nope.txt"}, base...), "no tracked file for /nope.txt"},
+		{"missing owner file", base[:1], "missing entry /.agents/agent-skills.conf"},
+	}
+	for _, tc := range cases {
+		problems := checkEntries(tc.patterns, tracked)
+		if tc.want == "" {
+			assert.Empty(t, problems, tc.name)
+
+			continue
+		}
+
+		assert.Contains(t, problems, tc.want, tc.name)
 	}
 }
 
-func TestCodeownersHasNoCatchAll(t *testing.T) {
-	t.Parallel()
-
-	patterns := codeownersPatterns(t)
-	require.NotEmpty(t, patterns)
-	assert.NotContains(t, patterns, "*", "a catch-all rule sends every change to the owner")
-	assert.NotContains(t, patterns, "/*", "a catch-all rule sends every change to the owner")
-}
-
-// ownerPathsPattern compiles the owner path pattern from agent-skills.conf.
-func ownerPathsPattern(t *testing.T) *regexp.Regexp {
+// confValue returns a key's value.
+func confValue(t *testing.T, key string) string {
 	t.Helper()
 
-	var pattern string
+	var value string
 
 	for line := range strings.SplitSeq(readRepoFile(t, ".agents/agent-skills.conf"), "\n") {
-		if value, ok := strings.CutPrefix(line, "owner_paths = "); ok {
-			pattern = value
+		if v, ok := strings.CutPrefix(line, key+" = "); ok {
+			value = v
 		}
 	}
 
-	require.NotEmpty(t, pattern, "the owner path pattern is missing from .agents/agent-skills.conf")
-	ownerPaths, err := regexp.Compile(pattern)
-	require.NoError(t, err)
+	require.NotEmpty(t, value, "%s is missing from .agents/agent-skills.conf", key)
 
-	return ownerPaths
-}
-
-// representativePaths returns paths that a CODEOWNERS pattern covers. A
-// directory pattern yields a file under it, and a glob yields one path with
-// the glob empty and one with it filled. A pattern with no slash matches at
-// any depth, so it also yields a nested copy.
-func representativePaths(pattern string) []string {
-	name := strings.TrimPrefix(pattern, "/")
-	if strings.HasSuffix(name, "/") {
-		name += "x"
-	}
-
-	paths := []string{name}
-	if strings.Contains(name, "*") {
-		paths = []string{strings.ReplaceAll(name, "*", ""), strings.ReplaceAll(name, "*", ".local")}
-	}
-
-	if !strings.Contains(pattern, "/") {
-		paths = append(paths, "sub/dir/"+paths[0])
-	}
-
-	return paths
-}
-
-func TestCodeownersIsSubsetOfOwnerPaths(t *testing.T) {
-	t.Parallel()
-
-	ownerPaths := ownerPathsPattern(t)
-	patterns := codeownersPatterns(t)
-	require.NotEmpty(t, patterns)
-
-	for _, pattern := range patterns {
-		t.Run(pattern, func(t *testing.T) {
-			t.Parallel()
-
-			for _, path := range representativePaths(pattern) {
-				assert.True(t, ownerPaths.MatchString(path),
-					"CODEOWNERS pattern %s covers %s, which the owner path pattern does not match", pattern, path)
-			}
-		})
-	}
+	return value
 }
 
 func TestOwnerPathsMatchesPolicy(t *testing.T) {
 	t.Parallel()
 
-	ownerPaths := ownerPathsPattern(t)
+	ownerPaths, err := regexp.Compile(confValue(t, "owner_paths"))
+	require.NoError(t, err)
 
 	cases := []struct {
 		path string
 		want bool
 	}{
 		{".github/CODEOWNERS", true},
-		{".github/rulesets/main.json", true},
-		{".github/workflows/ci.yml", true},
-		{".github/actions/x/action.yml", true},
 		{".agents/agent-skills.conf", true},
-		{".claude/settings.json", true},
-		{".claude/settings.local.json", true},
 
+		{"mise.toml", false},
+		{"mise.lock", false},
 		{"go.mod", false},
 		{"go.sum", false},
 		{"vendor/modules.txt", false},
-
-		{"mise.toml", false},
+		{"vendor/x", false},
+		{".github/workflows/ci.yml", false},
+		{".github/actions/x/action.yml", false},
+		{".github/rulesets/main.json", false},
+		{".claude/settings.json", false},
+		{".claude/settings.local.json", false},
 		{"AGENTS.md", false},
-		{".devtools/x", false},
 		{".agents/skills/x/SKILL.md", false},
-		{".claude/skills/x/SKILL.md", false},
-		{".github/renovate.json5", false},
+		{"sub/.github/CODEOWNERS", false},
+		{"sub/.agents/agent-skills.conf", false},
+		{".github/CODEOWNERS.bak", false},
 		{"cmd/gomodscan/main.go", false},
 	}
 	for _, tc := range cases {
