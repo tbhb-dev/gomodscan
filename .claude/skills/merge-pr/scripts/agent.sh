@@ -21,7 +21,7 @@ dt_repo_conf() {
         sub(/=.*/, "", key)
         gsub(/^[ \t]+|[ \t]+$/, "", key)
         if (!index($0, "=") || seen[key]++ ||
-            key !~ /^(lint_commit_cmd|required_hooks|hook_marker|review_max_rounds|pr_template|lint_pr_cmd|pr_log_entry|pr_related_pattern|pr_title_check_cmd|owner_paths|mail_cmd|mail_to|mail_from|lint_squash_cmd|owner_review_label|ruleset_dir|golden_paths|loosening_markers|gate_config_paths|disposable_ignored|merge_ready_cmd)$/) {
+            key !~ /^(lint_commit_cmd|required_hooks|hook_marker|review_max_rounds|pr_template|lint_pr_cmd|pr_log_entry|pr_related_pattern|pr_title_check_cmd|owner_paths|mail_cmd|mail_to|mail_from|lint_squash_cmd|owner_review_label|ruleset_dir|golden_paths|constitutional_paths|loosening_markers|gate_config_paths|disposable_ignored|merge_ready_cmd)$/) {
           print "Invalid or duplicate repository setting: " key > "/dev/stderr"
           bad = 1
         }
@@ -34,6 +34,14 @@ dt_repo_conf() {
     fi
   fi
   printf '%s\n' "${2:-}"
+}
+
+# Publishers and mergers reserve the same label, including its default.
+dt_owner_review_label() {
+  local label
+  label=$(dt_repo_conf owner_review_label owner-review) || return $?
+  [ -n "$label" ] || dt_die "owner_review_label must not be empty"
+  printf '%s\n' "$label"
 }
 
 dt_agent_context() {
@@ -60,7 +68,12 @@ dt_agent_rounds() {
   if [ -f "$state/$1.rounds" ]; then
     stored_subject=$(sed -n 's/^subject //p' "$state/$1.rounds") || return $?
     if [ "$stored_subject" = "$subject" ]; then
-      rounds=$(sed -n 's/^rounds //p' "$state/$1.rounds") || return $?
+      cat "$state/$1.rounds"
+      rounds=$(awk 'BEGIN { n=0 } /^rounds / { n=$2 } /^finding / { n++ } /^redesign / { n=0 } END { print n }' "$state/$1.rounds") || return $?
+      if grep -q '^redesign ' "$state/$1.rounds" && grep -Fqx "finding ${4:-}" "$state/$1.rounds"; then
+        printf 'BLOCKED: redesign draft matches a rejected digest for this subject. Rewrite it.\n' >&2
+        return 3
+      fi
     fi
   fi
   case $rounds in
@@ -68,11 +81,18 @@ dt_agent_rounds() {
   *) rounds=$max ;;
   esac
   if [ "${3:-check}" = finding ]; then
+    if [ "${stored_subject:-}" != "$subject" ]; then
+      printf 'subject %s\nbound %s\n' "$subject" "$max" >"$state/$1.rounds"
+    fi
     rounds=$((rounds + 1))
-    printf 'subject %s\nrounds %s\n' "$subject" "$rounds" >"$state/$1.rounds"
+    printf 'finding %s\n' "$4" >>"$state/$1.rounds"
   fi
   if [ "$rounds" -ge "$max" ]; then
-    printf 'BLOCKED: review reached the bound of %s finding rounds. Leave the draft and index in place and report the findings.\n' "$max" >&2
+    if grep -q '^redesign ' "$state/$1.rounds"; then
+      printf 'BLOCKED: review reached the finding bound after redesign; inspection required.\n' >&2
+    else
+      printf 'BLOCKED: review reached the bound of %s finding rounds. Start a redesign with agentrepo review redesign %s --reason TEXT.\n' "$max" "$1" >&2
+    fi
     return 3
   fi
 }
