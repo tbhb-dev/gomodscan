@@ -517,6 +517,12 @@ dt_review() {
     printf 'review: %s is not the text prepared for review; gather it again\n' "$(basename "$draft")" >&2
     return 5
   fi
+  if [ "${DEVTOOLS_UNATTENDED:-0}" = 1 ]; then
+    dt_agent_context || return $?
+    dt_agent_rounds "$kind" "$subject" check "$before" || return $?
+    repo_digest=$(dt_repo_digest) || return $?
+    set -- "$@" repo_config "$repo_digest"
+  fi
   verdict_record=$state/$kind.verdict
   if [ -f "$verdict_record" ] &&
     grep -Fqx "subject $subject" "$verdict_record" &&
@@ -524,12 +530,6 @@ dt_review() {
     grep -Fqx 'verdict changes' "$verdict_record"; then
     printf 'BLOCKED: this byte-identical draft already has CHANGES REQUIRED for the same review subject. Change the draft or ask the operator.\n' >&2
     return 3
-  fi
-  if [ "${DEVTOOLS_UNATTENDED:-0}" = 1 ]; then
-    dt_agent_context || return $?
-    dt_agent_rounds "$kind" "$subject" || return $?
-    repo_digest=$(dt_repo_digest) || return $?
-    set -- "$@" repo_config "$repo_digest"
   fi
   if [ -f "$inputs/review-policy-report.txt" ]; then
     cat "$inputs/review-policy-report.txt"
@@ -578,7 +578,7 @@ dt_review() {
     printf 'subject %s\ndraft %s\nverdict changes\n' "$subject" "$before" >"$verdict_record"
     cat "$reply"
     if [ "${DEVTOOLS_UNATTENDED:-0}" = 1 ]; then
-      dt_agent_rounds "$kind" "$subject" finding || return $?
+      dt_agent_rounds "$kind" "$subject" finding "$before" || return $?
     fi
     return 2
     ;;
@@ -766,10 +766,14 @@ dt_gh_post() {
 }
 
 # dt_gh preserves gh's failure status; quota exhaustion has status 76.
-# Only quota failures need the extra rate_limit reset lookup. Never retry a
+# A rate limit is recognized only from gh's own error lines on stderr after a
+# non-zero exit: a line starting with "gh: " or "GraphQL: " that carries one of
+# GitHub's rate-limit messages. gh never prints response headers, so the reset
+# time isn't known from the failure and nothing here asks GET /rate_limit,
+# which can disagree with the budget the failing call hit. Never retry a
 # mutation: its outcome may already have taken effect on GitHub.
 dt_gh() {
-  local err status reset resource
+  local err status line arg kind='' graphql=0 msg
   err=$(mktemp) || return 1
   if gh "$@" 2>"$err"; then
     cat "$err" >&2
@@ -778,17 +782,33 @@ dt_gh() {
   else
     status=$?
   fi
-  if grep -qiE 'rate.?limit|API rate limit exceeded' "$err"; then
-    resource=core
-    case "$*" in
-    *graphql* | 'pr view '* | 'pr list '* | 'pr checks '* | 'repo view '* | 'label list '* | 'issue list '*) resource=graphql ;;
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+    'GraphQL: '*) graphql=1 ;;
+    'gh: '*) graphql=0 ;;
+    *) continue ;;
     esac
-    if grep -qi 'GraphQL' "$err"; then resource=graphql; fi
-    reset=$(awk 'tolower($1) == tolower("X-RateLimit-Reset:") { print $2; exit }' "$err")
-    if [ -z "$reset" ]; then
-      reset=$(gh api rate_limit --jq ".resources.${resource}.reset" 2>/dev/null) || reset=""
+    case $line in
+    *'secondary rate limit'*) kind=secondary ;;
+    *'API rate limit exceeded for'* | *'API rate limit already exceeded for'*) kind=primary ;;
+    *) continue ;;
+    esac
+    break
+  done <"$err"
+  if [ -n "$kind" ]; then
+    # Every gh subcommand other than "gh api <REST path>" spends the GraphQL budget.
+    if [ "${1:-}" != api ]; then graphql=1; fi
+    for arg in "$@"; do
+      if [ "$arg" = graphql ]; then graphql=1; fi
+    done
+    if [ "$kind" = secondary ]; then
+      msg="rate limit: GitHub secondary rate limit; the reset time isn't known from the failure. Wait at least one minute before the next request, as GitHub's docs advise; no budget query helps."
+    elif [ "$graphql" = 1 ]; then
+      msg="rate limit: GitHub primary GraphQL rate limit, inferred from the command and the error line; the reset time isn't known from the failure. Once the limit has passed, read the budget with a GraphQL rateLimit { remaining resetAt } query, never /rate_limit."
+    else
+      msg="rate limit: GitHub primary REST rate limit, inferred from the command and the error line; the reset time isn't known from the failure. The budget can't be read reliably from here: wait for the hourly window and treat /rate_limit as advisory only."
     fi
-    printf 'rate limit: GitHub %s quota exhausted; reset time: %s. Rerun after the reset; no automatic retry was made.\n' "$resource" "${reset:-unavailable (see GitHub error below)}" >&2
+    printf '%s No automatic retry was made.\n' "$msg" >&2
     status=76
   fi
   cat "$err" >&2

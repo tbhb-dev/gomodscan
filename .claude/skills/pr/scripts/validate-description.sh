@@ -158,6 +158,9 @@ while IFS= read -r line || [ -n "$line" ]; do
       # The same reading create-pr.sh applies, so a value this accepts is
       # the value that publishes: `null`, `~`, and `""` all mean absent.
       value=$(pr_scalar "${line#*:}")
+      if contains "$fm_keys" "$key"; then
+        report "$line_no" frontmatter-duplicate-key "\"${key}\" must appear only once"
+      fi
       fm_keys="${fm_keys}${key} "
       if ! contains "$REQUIRED_KEYS $OPTIONAL_KEYS" "$key"; then
         report "$line_no" frontmatter-unknown-key \
@@ -274,6 +277,18 @@ if contains "$fm_keys" labels; then
       "the pull request carries no label; preflight printed the repository's label set"
     ;;
   esac
+  owner_review_label=$(dt_owner_review_label) || exit $?
+  owner_review_label=$(printf '%s' "$owner_review_label" | tr '[:upper:]' '[:lower:]')
+  draft_labels=$(pr_sequence "$fm_labels") || exit $?
+  while IFS= read -r label; do
+    label_identity=$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')
+    if [ "$label_identity" = "$owner_review_label" ]; then
+      report "$fm_labels_line" owner-review-label \
+        "${label} is applied only by the owner-approval route once the pull request is approved at its head, green and mergeable"
+    fi
+  done <<EOF
+$draft_labels
+EOF
 fi
 
 # A base naming no ref fails at creation time, and a base equal to the
@@ -346,6 +361,9 @@ fi
 
 # Walk the template's headings against the draft's. A missing heading
 # and a reordered one are different mistakes, so the report says which.
+# Each section finding names the working-tree template file this script
+# read, since pr_template and PR_TEMPLATE can both move it.
+provenance="; template: ${TEMPLATE}"
 present_ordered=""
 anchor_head=""
 anchor_line=$title_line
@@ -358,10 +376,10 @@ while IFS= read -r want; do
     anchor_line=$(line_of "$want")
   elif [ -n "$anchor_head" ]; then
     report "$anchor_line" section-missing \
-      "the draft has no \"${want}\" section; the template puts it after \"${anchor_head}\""
+      "the draft has no \"${want}\" section; the template puts it after \"${anchor_head}\"${provenance}"
   else
     report "$anchor_line" section-missing \
-      "the draft has no \"${want}\" section; the template opens with it"
+      "the draft has no \"${want}\" section; the template opens with it${provenance}"
   fi
 done <<EOF
 $required
@@ -383,7 +401,7 @@ if [ "$draft_ordered" != "$present_ordered" ]; then
   first_wrong=$(printf '%s' "$draft_ordered" | head -1)
   # shellcheck disable=SC2312 # Only formats diagnostic output; no decision uses the status.
   report "$(line_of "$first_wrong")" section-order \
-    "the template's sections run in this order: ${wanted}"
+    "the template's sections run in this order: ${wanted}${provenance}"
 fi
 
 while IFS= read -r entry; do
@@ -391,7 +409,7 @@ while IFS= read -r entry; do
   entry_line=${entry%%:*}
   entry_head=${entry#*:}
   if printf '%s' "$required" | grep -qxF "$entry_head"; then
-    report "$entry_line" section-empty "\"${entry_head}\" has no content under it"
+    report "$entry_line" section-empty "\"${entry_head}\" has no content under it${provenance}"
   fi
 done <<EOF
 $empty_sections

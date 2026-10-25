@@ -43,24 +43,24 @@ url = "https://github.com/microsoft/apm/releases/download/v0.33.0/apm-windows-x8
 url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/606234100"
 
 [[tools."go:github.com/tbhb-dev/devtools/cmd/agentrepo"]]
-version = "0.15.0"
+version = "0.20.0"
 backend = "go:github.com/tbhb-dev/devtools/cmd/agentrepo"
-specifiers = ["v0.15.0"]
+specifiers = ["v0.20.0"]
 
 [[tools."go:github.com/tbhb-dev/devtools/cmd/commit-lint"]]
-version = "0.15.0"
+version = "0.20.0"
 backend = "go:github.com/tbhb-dev/devtools/cmd/commit-lint"
-specifiers = ["v0.15.0"]
+specifiers = ["v0.20.0"]
 
 [[tools."go:github.com/tbhb-dev/devtools/cmd/gh-post"]]
-version = "0.15.0"
+version = "0.20.0"
 backend = "go:github.com/tbhb-dev/devtools/cmd/gh-post"
-specifiers = ["v0.15.0"]
+specifiers = ["v0.20.0"]
 
 [[tools."go:github.com/tbhb-dev/devtools/cmd/guard-markdown"]]
-version = "0.15.0"
+version = "0.20.0"
 backend = "go:github.com/tbhb-dev/devtools/cmd/guard-markdown"
-specifiers = ["v0.15.0"]
+specifiers = ["v0.20.0"]
 
 [[tools.jq]]
 version = "1.8.2"
