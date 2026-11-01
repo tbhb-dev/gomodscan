@@ -7,5 +7,5 @@ dependencies:
   apm:
     - tbhb-dev/devtools/packages/agents/claude#v0.20.0
     - tbhb-dev/devtools/packages/agents/codex#v0.20.0
-    - tbhb-dev/devtools/packages/agents/common#v0.20.0
+    - tbhb-dev/devtools/packages/agents/common#v0.22.1
   mcp: []
