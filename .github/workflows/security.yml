@@ -87,7 +87,7 @@ jobs:
       contents: read
       security-events: write
     # yamllint disable-line rule:line-length
-    uses: tbhb-dev/devtools/.github/workflows/scan-govulncheck.yml@be961b2c1cddf2f382a1de45f10ac7c548d4e80c # v0.20.0
+    uses: tbhb-dev/devtools/.github/workflows/scan-govulncheck.yml@1621e6a9e8416bf801732996a104a3b5b7a99fdb # v0.22.1
 
   gomodscan:
     name: gomodscan
