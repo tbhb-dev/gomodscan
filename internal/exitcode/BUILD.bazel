@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+load("@rules_go//go:def.bzl", "go_library")
+load("@tbhb_rules//repo:defs.bzl", "repo_files")
+
+repo_files()
+
+go_library(
+    name = "exitcode",
+    srcs = ["exitcode.go"],
+    importpath = "go.tbhb.dev/gomodscan/internal/exitcode",
+    visibility = ["//:__subpackages__"],
+)

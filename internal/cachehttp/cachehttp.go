@@ -23,7 +23,7 @@
 // cache can speed a scan up but never fails one.
 //
 // Layer the cache outside the retry transport
-// (github.com/tbhb-dev/gomodscan/internal/retryhttp) so a fresh hit
+// (go.tbhb.dev/gomodscan/internal/retryhttp) so a fresh hit
 // short-circuits before any backoff or socket. NewTransport takes that retry
 // transport as its inner RoundTripper.
 package cachehttp
@@ -49,8 +49,8 @@ import (
 // operators read it to tell a hit from a miss.
 const FromCacheHeader = "X-From-Cache"
 
-// Store persists opaque cache blobs under a key. Get and Put don't return
-// errors because the cache must never fail a scan. The disk-backed store
+// Store persists opaque cache blobs under a key. Get and Put return no
+// error, because the cache must never fail a scan. The disk-backed store
 // discards its IO errors instead of propagating them. Get reports a miss and
 // Put drops the write.
 type Store interface {
@@ -62,9 +62,9 @@ type Store interface {
 // stale.
 type entry struct {
 	Expires    time.Time
-	StatusCode int
 	Header     http.Header
 	Body       []byte
+	StatusCode int
 }
 
 // transport carries the caching RoundTripper that NewTransport returns.
@@ -97,6 +97,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return resp, err //nolint:wrapcheck // transparent, so the client wraps it.
 	}
+
 	return t.cache(key, resp), nil
 }
 
@@ -108,11 +109,13 @@ func (t *transport) fresh(req *http.Request, key string) (*http.Response, bool) 
 	if !ok {
 		return nil, false
 	}
-	e, err := decode(blob)
-	if err != nil || !time.Now().Before(e.Expires) {
+
+	ent, err := decode(blob)
+	if err != nil || !time.Now().Before(ent.Expires) {
 		return nil, false
 	}
-	return e.response(req), true
+
+	return ent.response(req), true
 }
 
 // cache stores resp under key when the response qualifies, then returns a
@@ -121,31 +124,34 @@ func (t *transport) fresh(req *http.Request, key string) (*http.Response, bool) 
 // a directive-free response, flows straight back. A failed body read or
 // encode skips the write yet still returns the buffered body.
 func (t *transport) cache(key string, resp *http.Response) *http.Response {
-	cc := parseCacheControl(resp.Header.Get("Cache-Control"))
-	if resp.StatusCode != http.StatusOK || !cc.present || cc.noStore || cc.maxAge <= 0 {
+	ctl := parseCacheControl(resp.Header.Get("Cache-Control"))
+	if resp.StatusCode != http.StatusOK || !ctl.present || ctl.noStore || ctl.maxAge <= 0 {
 		return resp
 	}
 
 	body, err := io.ReadAll(resp.Body)
+
 	_ = resp.Body.Close()
 	if err != nil {
 		// The body arrived partly consumed and now unreadable. Skip the cache
 		// write, yet still return what arrived so the client meets the same
 		// failure it would without a cache in the path.
 		resp.Body = io.NopCloser(bytes.NewReader(body))
+
 		return resp
 	}
+
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 
-	e := entry{
-		Expires:    time.Now().Add(cc.maxAge - age(resp.Header.Get("Age"))),
+	ent := entry{
+		Expires:    time.Now().Add(ctl.maxAge - age(resp.Header.Get("Age"))),
 		StatusCode: resp.StatusCode,
 		Header:     resp.Header.Clone(),
 		Body:       body,
 	}
-	if blob, encErr := encode(e); encErr == nil {
-		t.store.Put(key, blob)
-	}
+
+	t.store.Put(key, encode(ent))
+
 	return resp
 }
 
@@ -157,7 +163,9 @@ func (e entry) response(req *http.Request) *http.Response {
 	if header == nil {
 		header = make(http.Header)
 	}
+
 	header.Set(FromCacheHeader, "1")
+
 	return &http.Response{
 		StatusCode:    e.StatusCode,
 		Status:        strconv.Itoa(e.StatusCode) + " " + http.StatusText(e.StatusCode),
@@ -168,6 +176,12 @@ func (e entry) response(req *http.Request) *http.Response {
 		Body:          io.NopCloser(bytes.NewReader(e.Body)),
 		ContentLength: int64(len(e.Body)),
 		Request:       req,
+
+		TransferEncoding: nil,
+		Close:            false,
+		Uncompressed:     false,
+		Trailer:          nil,
+		TLS:              nil,
 	}
 }
 
@@ -176,13 +190,14 @@ func (e entry) response(req *http.Request) *http.Response {
 // token query parameters that page the results already ride in the URL.
 func cacheKey(req *http.Request) string {
 	sum := sha256.Sum256([]byte(req.Method + " " + req.URL.String()))
+
 	return hex.EncodeToString(sum[:])
 }
 
 // cacheControl holds the Cache-Control directives the cache acts on. present
 // reports whether the header had any directive at all, so a caller can
 // tell "no caching guidance" (don't store) apart from "max-age=0" (store
-// nothing fresh).
+// an entry that's never fresh).
 type cacheControl struct {
 	maxAge  time.Duration
 	noStore bool
@@ -192,22 +207,26 @@ type cacheControl struct {
 // parseCacheControl pulls the directives the cache acts on out of a
 // Cache-Control header, skipping any directive it doesn't recognize.
 func parseCacheControl(header string) cacheControl {
-	var cc cacheControl
+	var ctl cacheControl
+
 	for raw := range strings.SplitSeq(header, ",") {
 		directive := strings.ToLower(strings.TrimSpace(raw))
 		if directive == "" {
 			continue
 		}
-		cc.present = true
+
+		ctl.present = true
 		if directive == "no-store" {
-			cc.noStore = true
+			ctl.noStore = true
 		} else if value, ok := strings.CutPrefix(directive, "max-age="); ok {
-			if secs, err := strconv.Atoi(value); err == nil && secs > 0 {
-				cc.maxAge = time.Duration(secs) * time.Second
+			secs, err := strconv.Atoi(value)
+			if err == nil && secs > 0 {
+				ctl.maxAge = time.Duration(secs) * time.Second
 			}
 		}
 	}
-	return cc
+
+	return ctl
 }
 
 // age parses an Age header into a duration, returning zero for an absent or
@@ -218,23 +237,28 @@ func age(header string) time.Duration {
 	if err != nil || secs < 0 {
 		return 0
 	}
+
 	return time.Duration(secs) * time.Second
 }
 
-func encode(e entry) ([]byte, error) {
+func encode(e entry) []byte {
 	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(e); err != nil {
-		return nil, fmt.Errorf("encode cache entry: %w", err)
-	}
-	return buf.Bytes(), nil
+
+	//nolint:errcheck // an entry holds only a time, an int, a header map and bytes, which always encode into memory
+	_ = gob.NewEncoder(&buf).Encode(e)
+
+	return buf.Bytes()
 }
 
 func decode(blob []byte) (entry, error) {
-	var e entry
-	if err := gob.NewDecoder(bytes.NewReader(blob)).Decode(&e); err != nil {
+	var ent entry
+
+	err := gob.NewDecoder(bytes.NewReader(blob)).Decode(&ent)
+	if err != nil {
 		return entry{}, fmt.Errorf("decode cache entry: %w", err)
 	}
-	return e, nil
+
+	return ent, nil
 }
 
 // DiskStore backs [Store] with one file per key under a directory. It creates
@@ -242,13 +266,28 @@ func decode(blob []byte) (entry, error) {
 // read-only or missing cache directory turns the cache into a no-op rather
 // than a scan failure.
 type DiskStore struct {
+	// createTemp opens the temporary file Put writes. Tests replace it to
+	// fail a write or a close, which a real file can't do portably.
+	createTemp func(dir, pattern string) (tempFile, error)
+
 	dir string
+}
+
+// tempFile is the part of *os.File that Put uses on its temporary file.
+type tempFile interface {
+	io.WriteCloser
+	Name() string
 }
 
 // NewDiskStore returns a DiskStore rooted at dir. The directory need not
 // exist yet. The first Put creates it.
 func NewDiskStore(dir string) *DiskStore {
-	return &DiskStore{dir: dir}
+	return &DiskStore{dir: dir, createTemp: osCreateTemp}
+}
+
+//nolint:ireturn // the field's type is the interface Put needs, and tests substitute their own
+func osCreateTemp(dir, pattern string) (tempFile, error) {
+	return os.CreateTemp(dir, pattern) //nolint:wrapcheck // Put drops every IO error, so wrapping adds nothing
 }
 
 // DefaultDir returns the per-user cache directory for the pkg.go.dev response
@@ -259,6 +298,7 @@ func DefaultDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("locate user cache dir: %w", err)
 	}
+
 	return filepath.Join(base, "gomodscan", "pkgsite"), nil
 }
 
@@ -269,6 +309,7 @@ func (s *DiskStore) Get(key string) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
+
 	return blob, true
 }
 
@@ -276,20 +317,29 @@ func (s *DiskStore) Get(key string) ([]byte, bool) {
 // concurrent reader never observes a half-written entry and a re-fetch
 // overwrites the stale copy in place. Any IO error drops the write silently.
 func (s *DiskStore) Put(key string, blob []byte) {
-	if err := os.MkdirAll(s.dir, 0o750); err != nil {
-		return
-	}
-	tmp, err := os.CreateTemp(s.dir, key+".tmp-*")
+	err := os.MkdirAll(s.dir, 0o750)
 	if err != nil {
 		return
 	}
-	tmpName := tmp.Name()
-	_, writeErr := tmp.Write(blob)
-	if closeErr := tmp.Close(); writeErr != nil || closeErr != nil {
-		_ = os.Remove(tmpName)
+
+	tmp, err := s.createTemp(s.dir, key+".tmp-*")
+	if err != nil {
 		return
 	}
-	if err = os.Rename(tmpName, s.path(key)); err != nil {
+
+	tmpName := tmp.Name()
+
+	_, writeErr := tmp.Write(blob)
+
+	closeErr := tmp.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(tmpName)
+
+		return
+	}
+
+	err = os.Rename(tmpName, s.path(key))
+	if err != nil {
 		_ = os.Remove(tmpName)
 	}
 }

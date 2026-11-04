@@ -46,6 +46,7 @@ const infoURI = "https://github.com/tbhb-dev/gomodscan"
 // SARIF emitter passes it through to [sarif.Result.WithLevel].
 type Level string
 
+// The Level values are the three severities a finding takes.
 const (
 	LevelNote    Level = "note"
 	LevelWarning Level = "warning"
@@ -86,11 +87,11 @@ func AddResult(
 	loc Location,
 	props map[string]string,
 ) {
-	id := fmt.Sprintf("%s@%s", module, version)
+	fingerprint := fmt.Sprintf("%s@%s", module, version)
 
-	pb := sarif.NewPropertyBag()
+	bag := sarif.NewPropertyBag()
 	for _, k := range sortedKeys(props) {
-		pb.Add(k, props[k])
+		bag.Add(k, props[k])
 	}
 
 	run.CreateResultForRule(ruleID).
@@ -100,8 +101,8 @@ func AddResult(
 			sarif.NewLocation().
 				AddLogicalLocation(
 					sarif.NewLogicalLocation().
-						WithName(id).
-						WithFullyQualifiedName(id).
+						WithName(fingerprint).
+						WithFullyQualifiedName(fingerprint).
 						WithKind("module"),
 				).
 				WithPhysicalLocation(
@@ -110,45 +111,55 @@ func AddResult(
 						WithRegion(sarif.NewRegion().WithStartLine(loc.Line)),
 				),
 		).
-		WithProperties(pb).
+		WithProperties(bag).
 		// WithPartialFingerprints initializes the underlying map;
 		// AddPartialFingerprint panics on the zero value because
 		// the constructor leaves PartialFingerprints nil.
-		WithPartialFingerprints(map[string]string{"modulePathVersion/v1": id})
+		WithPartialFingerprints(map[string]string{"modulePathVersion/v1": fingerprint})
 }
 
 // WriteSARIF wraps run in a v2.1.0 [report.Report], validates it
-// against the bundled schema, and pretty-prints the JSON to w.
+// against the bundled schema, and pretty-prints the JSON to out.
 // Validation runs before the write so a malformed report fails
-// loudly here rather than at Code Scanning ingestion time.
-func WriteSARIF(w io.Writer, run *sarif.Run) error {
+// here with an error instead of at Code Scanning ingestion.
+func WriteSARIF(out io.Writer, run *sarif.Run) error {
 	rep := report.NewV210Report()
 	rep.AddRun(run)
-	if err := rep.Validate(); err != nil {
+
+	err := rep.Validate()
+	if err != nil {
 		return fmt.Errorf("validate sarif: %w", err)
 	}
-	if err := rep.PrettyWrite(w); err != nil {
+
+	err = rep.PrettyWrite(out)
+	if err != nil {
 		return fmt.Errorf("write sarif: %w", err)
 	}
+
 	return nil
 }
 
 // WriteText emits one finding line in the unified format described
 // at the package level. The caller passes pre-classified data; this
 // function only handles formatting and quoting.
-func WriteText(w io.Writer, level Level, tool, rule, module, version string, props map[string]string) error {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s: %s/%s: %s@%s", level, tool, rule, module, version)
+func WriteText(out io.Writer, level Level, tool, rule, module, version string, props map[string]string) error {
+	var line strings.Builder
+	fmt.Fprintf(&line, "%s: %s/%s: %s@%s", level, tool, rule, module, version)
+
 	for _, k := range sortedKeys(props) {
-		b.WriteByte(' ')
-		b.WriteString(k)
-		b.WriteByte('=')
-		b.WriteString(quoteValue(props[k]))
+		line.WriteByte(' ')
+		line.WriteString(k)
+		line.WriteByte('=')
+		line.WriteString(quoteValue(props[k]))
 	}
-	b.WriteByte('\n')
-	if _, err := io.WriteString(w, b.String()); err != nil {
+
+	line.WriteByte('\n')
+
+	_, err := io.WriteString(out, line.String())
+	if err != nil {
 		return fmt.Errorf("write text finding: %w", err)
 	}
+
 	return nil
 }
 
@@ -157,7 +168,9 @@ func sortedKeys(m map[string]string) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	return keys
 }
 
@@ -166,12 +179,14 @@ func sortedKeys(m map[string]string) []string {
 // everything else gets double-quoted with embedded quotes
 // backslash-escaped. The empty string round-trips as a quoted
 // empty literal.
-func quoteValue(v string) string {
-	if v == "" {
+func quoteValue(value string) string {
+	if value == "" {
 		return `""`
 	}
-	if !strings.ContainsAny(v, " \t\"=") {
-		return v
+
+	if !strings.ContainsAny(value, " \t\"=") {
+		return value
 	}
-	return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
+
+	return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
 }

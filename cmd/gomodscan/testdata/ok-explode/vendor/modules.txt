@@ -1,0 +1,6 @@
+# example.com/ok v1.0.0
+## explicit
+example.com/ok
+# example.com/explode v2.0.0
+## explicit
+example.com/explode

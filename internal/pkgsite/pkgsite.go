@@ -7,13 +7,13 @@
 // retraction status for each vendored module.
 //
 // The client wraps GET /v1/versions/{module} and decodes the
-// [ModuleVersion] records. It walks the nextPageToken chain, so the
-// caller sees the full version list. Other v1 endpoints
+// [ModuleVersion] records. It walks the nextPageToken chain and
+// returns the full version list. Other v1 endpoints
 // (package, search, vulns) stay out of scope.
 //
 // Field shapes mirror golang/pkgsite's
-// cmd/internal/pkgsite-cli/client/types_gen.go, the reference CLI
-// from the announcement blog post. The struct duplicates those
+// cmd/internal/pkgsite-cli/client/types_gen.go, the reference
+// command-line tool from the announcement blog post. The struct duplicates those
 // fields rather than importing the internal package. That keeps the
 // API contract explicit here.
 package pkgsite
@@ -28,8 +28,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tbhb-dev/gomodscan/internal/cachehttp"
-	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
+	"go.tbhb.dev/gomodscan/internal/cachehttp"
+	"go.tbhb.dev/gomodscan/internal/retryhttp"
 )
 
 const (
@@ -78,7 +78,7 @@ var ErrStalePageToken = errors.New("pkg.go.dev returned a non-advancing nextPage
 // lets the underlying connection pool serve every module lookup,
 // which avoids a fresh TLS handshake per page.
 //
-//nolint:gochecknoglobals // intentional process-wide singleton for connection pooling.
+//nolint:gochecknoglobals,exhaustruct_v5 // a pooled process-wide singleton; the other fields keep their defaults
 var defaultHTTPClient = &http.Client{
 	Transport: retryhttp.NewTransport(
 		http.DefaultTransport, retryhttp.InitialDelay, retryhttp.MaxDelay, retryhttp.AttemptTimeout,
@@ -89,16 +89,16 @@ var defaultHTTPClient = &http.Client{
 // /v1/versions/{module}. Field names match the JSON keys the
 // upstream OpenAPI spec documents.
 type ModuleVersion struct {
+	CommitTime        time.Time `json:"commitTime"`
 	ModulePath        string    `json:"modulePath"`
 	Version           string    `json:"version"`
-	CommitTime        time.Time `json:"commitTime"`
+	LatestVersion     string    `json:"latestVersion"`
+	DeprecationReason string    `json:"deprecationReason"`
+	RetractionReason  string    `json:"retractionReason"`
 	IsRedistributable bool      `json:"isRedistributable"`
 	HasGoMod          bool      `json:"hasGoMod"`
-	LatestVersion     string    `json:"latestVersion"`
 	Deprecated        bool      `json:"deprecated"`
-	DeprecationReason string    `json:"deprecationReason"`
 	Retracted         bool      `json:"retracted"`
-	RetractionReason  string    `json:"retractionReason"`
 }
 
 // Client fetches module-version metadata from a pkg.go.dev v1
@@ -110,27 +110,6 @@ type Client struct {
 	UserAgent  string
 }
 
-func (c *Client) baseURL() string {
-	if c.BaseURL != "" {
-		return c.BaseURL
-	}
-	return DefaultBaseURL
-}
-
-func (c *Client) httpClient() *http.Client {
-	if c.HTTPClient != nil {
-		return c.HTTPClient
-	}
-	return defaultHTTPClient
-}
-
-func (c *Client) userAgent() string {
-	if c.UserAgent != "" {
-		return c.UserAgent
-	}
-	return DefaultUserAgent
-}
-
 // page wraps the paginated response structure the API returns. attempts and
 // status record the request that delivered the page. A fault Versions finds
 // in it then reports the same diagnostics a failed request would. source
@@ -138,13 +117,12 @@ func (c *Client) userAgent() string {
 // cache served the page. With that prefix, those faults say where they came
 // from.
 type page struct {
+	NextPageToken string `json:"nextPageToken,omitempty"`
+	source        string
 	Items         []ModuleVersion `json:"items"`
 	Total         int             `json:"total"`
-	NextPageToken string          `json:"nextPageToken,omitempty"`
-
-	attempts int
-	status   int
-	source   string
+	attempts      int
+	status        int
 }
 
 // Versions returns every ModuleVersion record pkg.go.dev knows for
@@ -153,27 +131,30 @@ type page struct {
 // API responds 404.
 func (c *Client) Versions(ctx context.Context, module string) ([]ModuleVersion, error) {
 	var all []ModuleVersion
+
 	token := ""
 	for {
-		p, err := c.fetchPage(ctx, module, token)
+		result, err := c.fetchPage(ctx, module, token)
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, p.Items...)
-		if p.NextPageToken == "" {
+
+		all = append(all, result.Items...)
+		if result.NextPageToken == "" {
 			return all, nil
 		}
 		// The cursor must move forward. A token equal to the one just
 		// sent means the API isn't advancing, which would loop forever
 		// and exhaust memory. Refuse it instead of following it.
-		if p.NextPageToken == token {
+		if result.NextPageToken == token {
 			return nil, &retryhttp.Error{
-				Err:        fmt.Errorf("%w: %s", ErrStalePageToken, p.source),
-				Attempts:   p.attempts,
-				LastStatus: p.status,
+				Err:        fmt.Errorf("%w: %s", ErrStalePageToken, result.source),
+				Attempts:   result.attempts,
+				LastStatus: result.status,
 			}
 		}
-		token = p.NextPageToken
+
+		token = result.NextPageToken
 	}
 }
 
@@ -184,16 +165,18 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 	}
 
 	ctx, attempts := retryhttp.WithAttempts(ctx)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request for %s: %w", module, err)
 	}
+
 	req.Header.Set("User-Agent", c.userAgent())
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return nil, &retryhttp.Error{Err: fmt.Errorf("GET %s: %w", reqURL, err), Attempts: attempts()}
+		return nil, &retryhttp.Error{Err: fmt.Errorf("GET %s: %w", reqURL, err), Attempts: attempts(), LastStatus: 0}
 	}
 	defer resp.Body.Close()
 
@@ -209,16 +192,21 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 		if resp.Header.Get(cachehttp.FromCacheHeader) != "" {
 			status, source = 0, "cached response for "+module
 		}
-		var p page
-		if decErr := json.NewDecoder(resp.Body).Decode(&p); decErr != nil {
+
+		var result page
+
+		decErr := json.NewDecoder(resp.Body).Decode(&result)
+		if decErr != nil {
 			return nil, &retryhttp.Error{
 				Err:        fmt.Errorf("decode %s: %w", source, decErr),
 				Attempts:   attempts(),
 				LastStatus: status,
 			}
 		}
-		p.attempts, p.status, p.source = attempts(), status, source
-		return &p, nil
+
+		result.attempts, result.status, result.source = attempts(), status, source
+
+		return &result, nil
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, module)
 	default:
@@ -230,17 +218,45 @@ func (c *Client) fetchPage(ctx context.Context, module, token string) (*page, er
 	}
 }
 
+func (c *Client) baseURL() string {
+	if c.BaseURL != "" {
+		return c.BaseURL
+	}
+
+	return DefaultBaseURL
+}
+
+func (c *Client) httpClient() *http.Client {
+	if c.HTTPClient != nil {
+		return c.HTTPClient
+	}
+
+	return defaultHTTPClient
+}
+
+func (c *Client) userAgent() string {
+	if c.UserAgent != "" {
+		return c.UserAgent
+	}
+
+	return DefaultUserAgent
+}
+
 func (c *Client) buildURL(module, token string) (string, error) {
 	base, err := url.Parse(c.baseURL())
 	if err != nil {
 		return "", fmt.Errorf("parse base URL %q: %w", c.baseURL(), err)
 	}
-	u := base.JoinPath("v1", "versions", module)
-	q := u.Query()
-	q.Set("limit", strconv.Itoa(defaultPageLimit))
+
+	endpoint := base.JoinPath("v1", "versions", module)
+	query := endpoint.Query()
+	query.Set("limit", strconv.Itoa(defaultPageLimit))
+
 	if token != "" {
-		q.Set("token", token)
+		query.Set("token", token)
 	}
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+
+	endpoint.RawQuery = query.Encode()
+
+	return endpoint.String(), nil
 }

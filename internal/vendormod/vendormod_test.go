@@ -13,9 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tbhb-dev/gomodscan/internal/vendormod"
+	"go.tbhb.dev/gomodscan/internal/vendormod"
 )
 
+//nolint:funlen // one function holds the whole scenario table
 func TestParse(t *testing.T) {
 	t.Parallel()
 
@@ -46,7 +47,7 @@ github.com/stretchr/testify/require
 example.com/old
 `,
 			want: []vendormod.Module{
-				{Path: "example.com/new", Version: "v1.2.3", Line: 1},
+				{Path: modNew, Version: "v1.2.3", Line: 1},
 			},
 		},
 		{
@@ -107,7 +108,7 @@ loner
 example.com/old
 `,
 			want: []vendormod.Module{
-				{Path: "example.com/new", Version: "v9.9.9", Line: 1},
+				{Path: modNew, Version: "v9.9.9", Line: 1},
 			},
 		},
 		{
@@ -117,7 +118,7 @@ example.com/old
 example.com/old
 `,
 			want: []vendormod.Module{
-				{Path: "example.com/new", Version: "v9.9.9", Line: 1},
+				{Path: modNew, Version: "v9.9.9", Line: 1},
 			},
 		},
 		{
@@ -132,12 +133,13 @@ example.com/exact
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := vendormod.Parse(strings.NewReader(tc.in))
+
+			got, err := vendormod.Parse(strings.NewReader(testCase.in))
 			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
+			assert.Equal(t, testCase.want, got)
 		})
 	}
 }
@@ -159,15 +161,8 @@ func TestRead(t *testing.T) {
 
 	t.Run("returns parsed modules from vendor/modules.txt", func(t *testing.T) {
 		t.Parallel()
-		dir := t.TempDir()
-		vendorDir := filepath.Join(dir, "vendor")
-		require.NoError(t, os.MkdirAll(vendorDir, 0o755))
-		require.NoError(t, os.WriteFile(
-			filepath.Join(vendorDir, "modules.txt"),
-			[]byte("# github.com/keep/me v1.2.3\n## explicit\ngithub.com/keep/me\n"),
-			0o644,
-		))
-		got, err := vendormod.Read(dir)
+
+		got, err := vendormod.Read(filepath.Join("testdata", "basic"))
 		require.NoError(t, err)
 		assert.Equal(t, []vendormod.Module{
 			{Path: "github.com/keep/me", Version: "v1.2.3", Line: 1},
@@ -176,7 +171,8 @@ func TestRead(t *testing.T) {
 
 	t.Run("names the missing modules.txt path once", func(t *testing.T) {
 		t.Parallel()
-		modroot := filepath.Join(t.TempDir(), "absent")
+
+		modroot := filepath.Join("testdata", "absent")
 		path := filepath.Join(modroot, "vendor", "modules.txt")
 		_, openErr := os.Open(path)
 		require.Error(t, openErr)
@@ -191,15 +187,16 @@ func TestRead(t *testing.T) {
 
 	t.Run("wraps parse errors when a line overflows the scanner cap", func(t *testing.T) {
 		t.Parallel()
+
+		// The over-long line is generated because a 1 MiB fixture would
+		// bloat the repository for one assertion.
 		dir := t.TempDir()
 		vendorDir := filepath.Join(dir, "vendor")
-		require.NoError(t, os.MkdirAll(vendorDir, 0o755))
+		require.NoError(t, os.MkdirAll(vendorDir, 0o750))
+
 		huge := "# example.com/big " + strings.Repeat("v", (1<<20)+1) + "\n"
-		require.NoError(t, os.WriteFile(
-			filepath.Join(vendorDir, "modules.txt"),
-			[]byte(huge),
-			0o644,
-		))
+		require.NoError(t, os.WriteFile(filepath.Join(vendorDir, "modules.txt"), []byte(huge), 0o600))
+
 		got, err := vendormod.Read(dir)
 		require.Error(t, err)
 		assert.Nil(t, got)
@@ -207,3 +204,49 @@ func TestRead(t *testing.T) {
 		assert.Contains(t, err.Error(), "scan:")
 	})
 }
+
+// TestSelfFixtureMatchesGoMod keeps testdata/self/vendor/modules.txt, a
+// copy of what go mod vendor writes for this module, consistent with the
+// requirements in the repository's go.mod. A dependency bump that skips the
+// fixture fails here.
+func TestSelfFixtureMatchesGoMod(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	require.NoError(t, err)
+
+	want := map[string]string{}
+	inRequire := false
+
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+
+		switch {
+		case line == "require (":
+			inRequire = true
+		case line == ")":
+			inRequire = false
+		case inRequire:
+			fields := strings.Fields(line)
+			require.GreaterOrEqual(t, len(fields), 2, line)
+
+			want[fields[0]] = fields[1]
+		}
+	}
+
+	require.NotEmpty(t, want)
+
+	modules, err := vendormod.Read(filepath.Join("testdata", "self"))
+	require.NoError(t, err)
+
+	got := make(map[string]string, len(modules))
+	for _, module := range modules {
+		got[module.Path] = module.Version
+	}
+
+	assert.Equal(t, want, got)
+}
+
+const (
+	modNew = "example.com/new"
+)

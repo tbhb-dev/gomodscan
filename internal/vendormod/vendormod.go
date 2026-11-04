@@ -3,8 +3,8 @@
 
 // Package vendormod enumerates the modules a project vendors.
 // Both depscan and malscan call [Read] to load the dependency set
-// they need to audit, and future scanners under tools/ share the
-// parser rather than carrying their own copy.
+// they need to audit, and future scanners under tools/ use the
+// same parser instead of their own copy.
 package vendormod
 
 import (
@@ -51,50 +51,61 @@ type Module struct {
 // Pass an empty modroot to read from the current working directory.
 func Read(modroot string) ([]Module, error) {
 	path := filepath.Join(modroot, "vendor", "modules.txt")
-	f, err := os.Open(path)
+
+	manifest, err := os.Open(path)
 	if err != nil {
 		// Because the *fs.PathError from os.Open already includes the
 		// operation and the path, the wrap adds neither.
 		return nil, fmt.Errorf("vendor manifest: %w", err)
 	}
-	defer f.Close()
-	mods, err := Parse(f)
+	defer manifest.Close()
+
+	mods, err := Parse(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+
 	return mods, nil
 }
 
 // Parse reads the well-defined vendor/modules.txt format described
 // in the [Go vendoring reference]. Lines that begin with "# "
 // declare a module and its version, optionally followed by a
-// replace directive ("=> path" or "=> path version"). Two leading
-// hashes ("## ") flag sub-metadata that the parser ignores. Every
+// replace directive ("=> path" or "=> path version"). A line with two leading
+// hashes ("## ") flags sub-metadata that the parser ignores. Every
 // other line lists package paths inside the most recent module
 // and doesn't affect enumeration.
 //
 // [Go vendoring reference]: https://go.dev/ref/mod#vendoring
 func Parse(r io.Reader) ([]Module, error) {
 	var mods []Module
+
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, scannerInitialBufSize), scannerMaxBufSize)
+
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
+
 		line := scanner.Text()
-		if !strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "## ") {
+		if !strings.HasPrefix(line, "# ") {
 			continue
 		}
+
 		mod, ok := parseLine(strings.TrimPrefix(line, "# "))
 		if !ok {
 			continue
 		}
+
 		mod.Line = lineNo
 		mods = append(mods, mod)
 	}
-	if err := scanner.Err(); err != nil {
+
+	err := scanner.Err()
+	if err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
+
 	return mods, nil
 }
 
@@ -119,10 +130,12 @@ func Parse(r io.Reader) ([]Module, error) {
 func parseLine(line string) (Module, bool) {
 	fields := strings.Fields(line)
 	if len(fields) >= 4 && fields[len(fields)-3] == "=>" {
-		return Module{Path: fields[len(fields)-2], Version: fields[len(fields)-1]}, true
+		return Module{Path: fields[len(fields)-2], Version: fields[len(fields)-1], Line: 0}, true
 	}
+
 	if len(fields) == plainModuleFields {
-		return Module{Path: fields[0], Version: fields[1]}, true
+		return Module{Path: fields[0], Version: fields[1], Line: 0}, true
 	}
-	return Module{}, false
+
+	return Module{Path: "", Version: "", Line: 0}, false
 }

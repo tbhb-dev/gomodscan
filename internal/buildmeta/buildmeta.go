@@ -13,10 +13,9 @@ import "runtime/debug"
 // signal to consult runtime/debug rather than as a real version.
 const devFallback = "DEV"
 
-// Build-time variables. .devtools/scripts/go-ldflags.sh, which
-// `mise run build` uses, sets these via -ldflags, passing the argument
-// "-X github.com/tbhb-dev/gomodscan/internal/buildmeta.<Var>=<value>" for
-// each one.
+// Build-time variables. The x_defs in the Bazel build file set these through
+// the linker's -X flag, from the stable workspace status keys that
+// tools/get_workspace_status.sh prints.
 // The defaults below apply when the build passes no ldflags.
 //
 //nolint:gochecknoglobals // ldflags -X can only patch package-level vars
@@ -52,22 +51,26 @@ func init() {
 
 // resolveVersion produces the effective package Version from the
 // ldflags-supplied value and a callable that reads the runtime
-// build info. When ldflags pinned a non-default version, that
-// value wins. With the placeholder fallback in place, the runtime
-// build info supplies a module-derived version, except when the
-// reader reports the literal (devel) value. That literal leaves
-// the placeholder untouched so callers always see a non-empty
+// build info. It returns a real version from ldflags unchanged. Because a
+// Bazel build without the stamp flag substitutes an empty string for
+// every workspace status key, an empty value counts as unset.
+// With the placeholder or an empty value, the runtime build info
+// supplies a module-derived version, except when the reader reports an
+// empty version or the literal (devel) value, as a Bazel-built binary does.
+// Either leaves the placeholder in place so callers always see a non-empty
 // Version.
 //
 // The function takes readBuildInfo as a parameter so tests can
 // drive each branch directly without spawning a child process.
 func resolveVersion(ldflagsVersion string, readBuildInfo func() (*debug.BuildInfo, bool)) string {
-	if ldflagsVersion != devFallback {
+	if ldflagsVersion != "" && ldflagsVersion != devFallback {
 		return ldflagsVersion
 	}
+
 	info, ok := readBuildInfo()
-	if !ok || info.Main.Version == "(devel)" {
-		return ldflagsVersion
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return devFallback
 	}
+
 	return info.Main.Version
 }

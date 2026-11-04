@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@tbhb_rules//repo:defs.bzl", "repo_files")
+
+repo_files()
+
+go_library(
+    name = "cachehttp",
+    srcs = ["cachehttp.go"],
+    importpath = "go.tbhb.dev/gomodscan/internal/cachehttp",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "cachehttp_test",
+    srcs = [
+        "cachehttp_internal_test.go",
+        "cachehttp_test.go",
+    ],
+    embed = [":cachehttp"],
+    visibility = ["//:__pkg__"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+    # The whole-module Go checks in the root package take the tests too.
+)

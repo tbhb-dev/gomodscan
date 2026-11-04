@@ -1,0 +1,6 @@
+# example.com/a v1.0.0
+## explicit
+example.com/a
+# example.com/b v1.0.0
+## explicit
+example.com/b

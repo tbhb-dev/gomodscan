@@ -14,6 +14,8 @@ import (
 // chain so mutation testing doesn't find a surviving conditional flip
 // in the init-time logic. The cases pair an ldflags input with a
 // hand-rolled readBuildInfo result and assert the resolved version.
+//
+//nolint:dupl // test scenarios repeat the same arrange and assert steps
 func TestResolveVersion(t *testing.T) {
 	t.Parallel()
 
@@ -33,35 +35,64 @@ func TestResolveVersion(t *testing.T) {
 		},
 		{
 			name:           "build info unavailable keeps DEV fallback",
-			ldflagsVersion: "DEV",
+			ldflagsVersion: devFallback,
 			readBuildInfo: func() (*debug.BuildInfo, bool) {
 				return nil, false
 			},
-			want: "DEV",
+			want: devFallback,
 		},
 		{
 			name:           "build info devel placeholder keeps DEV fallback",
-			ldflagsVersion: "DEV",
+			ldflagsVersion: devFallback,
 			readBuildInfo: func() (*debug.BuildInfo, bool) {
 				return &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true
 			},
-			want: "DEV",
+			want: devFallback,
 		},
 		{
 			name:           "build info concrete version replaces DEV fallback",
-			ldflagsVersion: "DEV",
+			ldflagsVersion: devFallback,
 			readBuildInfo: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{Main: debug.Module{Version: "v0.4.2"}}, true
+				return &debug.BuildInfo{Main: debug.Module{Version: versionV042}}, true
 			},
-			want: "v0.4.2",
+			want: versionV042,
+		},
+		{
+			name:           "build info with an empty version keeps DEV fallback",
+			ldflagsVersion: devFallback,
+			readBuildInfo: func() (*debug.BuildInfo, bool) {
+				return &debug.BuildInfo{}, true
+			},
+			want: devFallback,
+		},
+		{
+			name:           "empty version from an unstamped build keeps DEV fallback",
+			ldflagsVersion: "",
+			readBuildInfo: func() (*debug.BuildInfo, bool) {
+				return nil, false
+			},
+			want: devFallback,
+		},
+		{
+			name:           "empty version from an unstamped build takes the build info version",
+			ldflagsVersion: "",
+			readBuildInfo: func() (*debug.BuildInfo, bool) {
+				return &debug.BuildInfo{Main: debug.Module{Version: versionV042}}, true
+			},
+			want: versionV042,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := resolveVersion(tc.ldflagsVersion, tc.readBuildInfo)
 			assert.Equal(t, tc.want, got)
 		})
 	}
 }
+
+const (
+	versionV042 = "v0.4.2"
+)
