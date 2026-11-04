@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Tony Burns
 
-# Migrated from the yamllint config devtools uses (`extends: default`, line
+# Migrated from the earlier yamllint config (`extends: default`, line
 # length 120, comments one space from content, truthy keys unchecked), with
 # ryl's native TOML format. `bazelisk test //:ryl_test` runs it with --strict.
 
