@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tbhb-dev/ascm/main/.github/schemas/pull-request-draft.schema.json",
+  "title": "ascm pull request draft frontmatter",
+  "description": "YAML frontmatter of .github/PULL_REQUEST_DRAFT.md. It carries the metadata the PR script passes to gh pr create and gh pr edit. The title is the draft's level-one heading and the description is its body, so neither appears here. Every field is optional.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "The branch the pull request targets, and the branch the script diffs against to collect the commits' LLM trailers.",
+      "type": "string",
+      "default": "main",
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._/-]*$"
+    },
+    "draft": {
+      "description": "Open the pull request as a draft.",
+      "type": "boolean",
+      "default": false
+    },
+    "labels": {
+      "description": "Labels that already exist in the repository. A label name has no comma, since gh splits on commas, and no leading or trailing space.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 50,
+        "pattern": "^[^,\\s](?:[^,]*[^,\\s])?$"
+      }
+    },
+    "reviewers": {
+      "description": "Requested reviewers: a GitHub login, or org/team for a team.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 100,
+        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?$"
+      }
+    },
+    "assignees": {
+      "description": "Assignees: a GitHub login, or @me for the person running the script.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 39,
+        "pattern": "^(?:@me|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)$"
+      }
+    },
+    "milestone": {
+      "description": "The name of an existing milestone.",
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^\\S(?:.*\\S)?$"
+    }
+  }
+}

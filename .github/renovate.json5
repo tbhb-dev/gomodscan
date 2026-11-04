@@ -1,28 +1,23 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Tony Burns
+
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
 
-  // The repository-level policy comes from two shared devtools presets:
-  // renovate-config.json5 has the rules, grouping, and the custom managers
-  // for pin sites no built-in manager reads, and renovate-go-config.json5
-  // has the Go-module specifics (gomodTidy and the go-deps grouping). Both
-  // are pinned to the same commit. devtools:check-pins reads the trailing
-  // version comment on each line, and devtools:update-pins moves both
-  // together with the other pin sites.
-  //
-  // The global-only options (identity, limits, requireConfig) are inlined
-  // here rather than taken from globalExtends, which Renovate resolves
-  // before host rules exist, so that fetch would run unauthenticated.
-  requireConfig: "ignored",
-  username: "tbhb-dev-renovate[bot]",
-  gitAuthor: "tbhb-dev-renovate[bot] <289255489+tbhb-dev-renovate[bot]@users.noreply.github.com>",
-  prConcurrentLimit: 0,
-  prHourlyLimit: 0,
+  // The presets track tbhb-dev/renovate-config's main branch, pinned by
+  // commit; Renovate bumps the pins (the "renovate-config" group).
   extends: [
-    "github>tbhb-dev/devtools//.github/renovate-config.json5#be961b2c1cddf2f382a1de45f10ac7c548d4e80c", // v0.20.0
-    "github>tbhb-dev/devtools//.github/renovate-go-config.json5#be961b2c1cddf2f382a1de45f10ac7c548d4e80c", // v0.20.0
+    "github>tbhb-dev/renovate-config//default.json5#c993c230872876912187a2fb8df69d94778be799", // main
+    "github>tbhb-dev/renovate-config//bazel.json5#c993c230872876912187a2fb8df69d94778be799", // main
+    "github>tbhb-dev/renovate-config//go.json5#c993c230872876912187a2fb8df69d94778be799", // main
+    "github>tbhb-dev/renovate-config//python.json5#c993c230872876912187a2fb8df69d94778be799", // main
   ],
 
-  // The repository keeps go 1.26 and toolchain go1.26.5 on purpose.
+  // The Go module, Bazel pins and uv lock are covered by the presets. The one
+  // addition is a rule that stops Renovate from changing the go and toolchain
+  // directives in go.mod: the module declares go 1.26 on purpose, and the
+  // toolchain directive sets the Go release Bazel's go_sdk uses, so a person
+  // changes either one.
   packageRules: [
     {
       matchManagers: ["gomod"],
@@ -30,6 +25,4 @@
       enabled: false,
     },
   ],
-
-  repositories: ["tbhb-dev/gomodscan"],
 }

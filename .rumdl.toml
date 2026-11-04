@@ -1,36 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
 [global]
 disable = [
   "MD013",  # Line length — we don't hardwrap markdown.
-  "MD033",  # Inline HTML — needed for cosign/badge embeds.
 ]
 respect_gitignore = true
 exclude = [
   ".git",
   ".vale",
   "tmp",
-  "vendor",
-  ".devtools",
-  ".claude",
-  "apm_modules",
-  "bin",
-  ".claude/skills/*/SKILL.md",
-  "CODEOWNERS",
   "LICENSE",
 ]
-
-# Per-path rule exclusions for the cog-generated CHANGELOG.md, which
-# repeats version headings (MD024) and opens with a horizontal rule
-# immediately followed by the `<!-- release -->` insertion marker cog
-# writes with no blank line between them (MD065). MD013 is already
-# disabled globally, and MD041 stays enforced here (the file opens with
-# `# Changelog`); the heading-less release-note fragments disable MD041
-# in their own task.
-# The pull request template opens at level 2 instead, so MD041 comes off
-# for that path: GitHub renders the pull request title above the body,
-# and a level 1 heading inside the template would repeat it.
-[per-file-ignores]
-"CHANGELOG.md" = ["MD024", "MD065"]
-".github/pull_request_template.md" = ["MD041"]
 
 [MD003]
 style = "atx"
@@ -43,3 +24,13 @@ front_matter_title = ""
 
 [MD048]
 style = "backtick"
+
+# OKF index files require `* [Title](link) - description` entries, so the
+# star marker is part of the format there, not a style choice.
+[per-file-ignores]
+# cog writes CHANGELOG.md: it repeats version headings (MD024) and puts the
+# release marker directly under the separator rule (MD065).
+"CHANGELOG.md" = ["MD024", "MD065"]
+"**/index.md" = ["MD004"]
+# A PR body has no H1: GitHub shows the PR title above it.
+".github/PULL_REQUEST_TEMPLATE.md" = ["MD041"]

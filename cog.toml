@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
 tag_prefix = "v"
 
 # No pre_bump_hooks: gomodscan carries no version literal for a release to
-# rewrite. The binary's Version, Commit and Date arrive through ldflags at
-# build time (.devtools/scripts/go-ldflags.sh), and apm.yml's version
-# describes the local agent manifest rather than a published package.
+# rewrite. The binary's Version, Commit and Date arrive from the workspace
+# status command at build time (tools/get_workspace_status.sh).
 
 [changelog]
 path = "CHANGELOG.md"

@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+# Migrated from the yamllint config devtools uses (`extends: default`, line
+# length 120, comments one space from content, truthy keys unchecked), with
+# ryl's native TOML format. `bazelisk test //:ryl_test` runs it with --strict.
+
+exclude-from-file = [
+  ".gitignore",
+  ".rylignore",
+]
+
+[files]
+yaml = [
+  "*.yaml",
+  "*.yml",
+  ".yamllint",
+]
+
+[lint.rules]
+anchors = "enable"
+braces = "enable"
+brackets = "enable"
+colons = "enable"
+commas = "enable"
+document-end = "disable"
+empty-lines = "enable"
+empty-values = "disable"
+float-values = "disable"
+hyphens = "enable"
+indentation = "enable"
+key-duplicates = "enable"
+key-ordering = "disable"
+new-line-at-end-of-file = "enable"
+new-lines = "enable"
+octal-values = "disable"
+quoted-strings = "disable"
+trailing-spaces = "enable"
+
+[lint.rules.comments]
+level = "warning"
+min-spaces-from-content = 1
+
+[lint.rules.comments-indentation]
+level = "warning"
+
+[lint.rules.document-start]
+level = "warning"
+
+[lint.rules.line-length]
+max = 120
+
+[lint.rules.truthy]
+check-keys = false
+level = "warning"
+
+[format]
+quote-style = "preserve"

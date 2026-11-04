@@ -1,6 +1,8 @@
 #:schema tombi://www.schemastore.org/tombi.json
-# Standard tombi config adapted from tbhb-dev/devtools v0.20.0.
-# Gate commands are invoked only via `mise run devtools:lint-toml` / `mise run devtools:format-toml`, never raw:
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+# Run by `bazelisk test //:tombi_test` (tombi 1.9.6):
 #   tombi format --check --diff             (non-mutating format gate)
 #   tombi lint --offline --error-on-warnings
 # Re-verify the tombi pin whenever the version literals move.
@@ -12,60 +14,57 @@ toml-version = "v1.0.0"
 # Most are already .gitignored (respect-ignore-files re-covers them), but they are
 # listed explicitly so the exclusion is unambiguous for CLI and editor and survives a
 # repo that forgets to gitignore one of them. Every entry is intentional (an
-# undocumented ignore is a review defect, per org convention).
+# undocumented ignore is a review defect).
 exclude = [
-  "vendor/**/*.toml",
-  ".devtools/**/*.toml",
-  ".config/mise/**/*.toml",
-  "mise.local.toml",
   ".venv/**/*.toml",
-  "target/**/*.toml",
   "tmp/**/*.toml",
-  ".claude/**/*.toml",
-  "apm_modules/**/*.toml",
-  "node_modules/**/*.toml",
-  # Generated lockfiles excluded from the format gate. They end in .lock not .toml,
-  # so the default include already skips them; listed here to make the decision
+  "bazel-*/**/*.toml",
+  # Test fixtures, some deliberately malformed for failure proofs.
+  "**/testdata/**/*.toml",
+  # Generated lockfiles stay out of the format gate. They end in .lock not .toml,
+  # so the default include already skips them; listed here to make that choice
   # explicit and durable.
-  "Cargo.lock",
-  "uv.lock",
+  "**/uv.lock",
+  "**/mise.lock",
 ]
-# Honor .gitignore/.ignore so generated trees (.cosmic-ray/, .rumdl_cache/, target/,
-# .venv/, node_modules/, apm_modules/) are skipped without enumerating each here.
+# Honor .gitignore/.ignore so generated trees (.rumdl_cache/, .venv/) are skipped without enumerating each here.
 respect-ignore-files = true
 
 [schema]
-# Validation stays ON: Cargo.toml validates offline against the embedded SchemaStore
-# cargo.json; pyproject.toml against its embedded schema. strict is OFF org-wide because
+# Validation stays ON: pyproject.toml against its embedded schema. strict is OFF everywhere because
 # SchemaStore schemas lag real config surfaces (e.g. rumdl's valid `respect_gitignore`
 # key is absent from schemastore rumdl.json) and under `--error-on-warnings` a strict
 # "unknown key" warning would hard-fail the gate on a legitimate key. Non-strict still
-# checks types, enums, and deprecations. Tighten per-file only if the org authors local
+# checks types, enums, and deprecations. Tighten per-file only if a repo authors local
 # schemas (escape valve: a `#:schema none` directive or a `[[schemas]]` entry per file).
 enabled = true
 strict = false
 
 # Preserve author key/array order. When a file has an associated schema, tombi's
 # formatter otherwise reorders keys and array values to the schema's canonical
-# order — a semantic rewrite of hand-authored manifests. The org format gate is
+# order — a semantic rewrite of hand-authored manifests. The format gate is
 # whitespace/style only, so schema-driven reordering is disabled for the two
-# schema-bearing file kinds the org carries (Cargo.toml, pyproject.toml). tombi
+# schema-bearing file kinds these repos carry (Cargo.toml, pyproject.toml). tombi
 # 1.2.0 has no global toggle for this (a top-level `[format.rules]` with
 # `table-keys-order` / `array-values-order` fails to parse under the pinned
 # binary); these per-schema overrides are the 1.2.0 mechanism. An entry whose
 # `include` matches no file in a given repo is inert, which keeps this config
-# byte-identical across the org. Validation is unchanged: the `tombi://` paths
+# byte-identical across repos. Validation is unchanged: the `tombi://` paths
 # name the same embedded SchemaStore documents the built-in catalog would
 # associate, so type, enum, and deprecation checks still run offline.
-
-[[schemas]]
-path = "tombi://www.schemastore.org/cargo.json"
-include = ["**/Cargo.toml"]
-format.rules.array-values-order.enabled = false
-format.rules.table-keys-order.enabled = false
 
 [[schemas]]
 path = "tombi://www.schemastore.org/pyproject.json"
 include = ["**/pyproject.toml"]
 format.rules.array-values-order.enabled = false
 format.rules.table-keys-order.enabled = false
+
+# mise.toml is formatted by `mise fmt` (the lint-mise task), which keeps a
+# short array with a multi-line string element on one line:
+#   run = ["go mod tidy -diff", '''
+#   ...''']
+# tombi wants that array exploded, and the two formatters reject each other's
+# output, so mise's own formatter owns this file. tombi still lints it.
+[[overrides]]
+files.include = ["mise.toml"]
+format.enabled = false

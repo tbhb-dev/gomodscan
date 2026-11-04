@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+# Repo-level Python toolchain. This repository is primarily Go; the Python
+# here is the interim agent tooling under tools/interim, and this file pins
+# what those scripts need at runtime. `package = false` keeps the root virtual: uv syncs the
+# dependency groups into .venv without trying to build the root.
+[project]
+name = "gomodscan-workspace"
+# Inert. Nothing builds or publishes from this table.
+version = "0"
+description = "Repo-local Python tooling for gomodscan"
+requires-python = ">=3.15"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  # tools/interim/pull_request.py validates PR drafts against the JSON
+  # Schema in .github/schemas and reads the YAML front matter.
+  "jsonschema[format]>=4.26.0",
+  "pyyaml>=6.0.3",
+  # tbhb_rules_python's pip_audit reads the audit set from uv.lock.
+  "pip-audit>=2.10.1",
+  # The git hook runner install.sh wires up.
+  "prek==0.5.9",
+]
+
+[tool.uv]
+package = false
+# mise pins uv in [tools], but that pin binds only where mise resolves
+# PATH. An editor, a hook, or a contributor's own install runs whatever uv it
+# finds, and a resolver from another minor line rewrites uv.lock in ways
+# `uv lock --check` then reports as drift. This range is uv refusing to run
+# rather than the lockfile churning. Move it with the mise pin.
+required-version = ">=0.13.0,<0.14"

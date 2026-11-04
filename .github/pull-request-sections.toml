@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+# The section scheme of a pull request description: the one source of truth
+# for which H2 sections exist, their order, which are required, and their
+# word limits. tools/interim/pull_request.py reads it, and a test checks that
+# the guidance comments in PULL_REQUEST_TEMPLATE.md state the same numbers.
+# A limit counts prose words only: fenced code, inline code, link URLs, and
+# HTML comments are free.
+
+[[section]]
+heading = "Why"
+required = true
+max_words = 60
+
+[[section]]
+heading = "Behavior change"
+required = true
+max_words = 120
+
+[[section]]
+heading = "Decisions"
+required = false
+max_words = 120
+
+[[section]]
+heading = "Deviations from the task"
+required = false
+max_words = 80
+
+[[section]]
+heading = "Needs human judgment"
+required = false
+max_words = 100
+
+[[section]]
+heading = "Risk"
+required = false
+max_words = 80
+
+[[section]]
+heading = "Verification"
+required = true
+max_words = 150
+
+[[section]]
+heading = "Human steering"
+required = false
+max_words = 40

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
 ---
 extends: conditional
 message: "Spell out '%s', if it's unfamiliar to the audience."
@@ -10,16 +13,19 @@ second: '(?:\b[A-Z][a-z]+ )+\(([A-Z]{3,5})\)'
 # ... with the exception of these:
 exceptions:
   - API
-  - AST
   - ASP
+  - AST
   - AUD
-  - CLI
   - CIDR
+  - CLI
   - CPU
+  - CRLF
   - CSS
   - CSV
-  - DNS
+  - CVE
+  - DCO
   - DEBUG
+  - DNS
   - DOM
   - DPI
   - ENF
@@ -29,6 +35,8 @@ exceptions:
   - GCC
   - GDB
   - GET
+  - GHSA
+  - GPT
   - GPU
   - GTK
   - GUI
@@ -43,10 +51,15 @@ exceptions:
   - JSX
   - LESS
   - LLDB
+  - LLM
+  - LTS
+  - MAL
   - NET
   - NOTE
   - NVDA
+  - OKF
   - OSS
+  - OSSF
   - OSV
   - PATH
   - PDF
@@ -56,31 +69,31 @@ exceptions:
   - REB
   - REPL
   - REST
+  - REUSE
   - RSA
+  - SARIF
   - SCA
   - SCM
   - SCSS
   - SDK
+  - SHA
+  - SPDX
   - SQL
   - SSH
   - SSL
   - SVG
   - TBD
   - TCP
+  - TLS
   - TODO
+  - TOML
   - UPD
   - URI
   - URL
   - USB
-  - UUID
   - UTF
+  - UUID
   - XML
   - XSS
   - YAML
   - ZIP
-  - LLM
-  - GPT
-  - DCO
-  - GHSA
-  - MAL
-  - LTS

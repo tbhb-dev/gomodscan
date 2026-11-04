@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tbhb-dev/ascm/main/docs/schemas/frontmatter.schema.json",
+  "title": "ascm Markdown frontmatter",
+  "description": "YAML frontmatter of every Markdown file in the ascm repository except the reserved index.md and log.md files. It follows OKF v0.2 and records authorship with the same fields the Generated-by and Assisted-by commit trailers carry.",
+  "$comment": "The generated entries mirror the Generated-by and Assisted-by commit trailer grammar (Key: LLM attr=value;...), documented in docs/reference/frontmatter.md. The same field names, value formats, and hashed-ID form apply, and, as in a trailer, a field that cannot be determined is omitted and never guessed or defaulted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "title", "description", "tags", "status"],
+  "properties": {
+    "type": {
+      "description": "What kind of document this is. A closed set: add a value here, in the same change as the first document that needs it.",
+      "enum": [
+        "Readme",
+        "Agent Instructions",
+        "Overview",
+        "Architecture Overview",
+        "Reference",
+        "How-to",
+        "Design Draft",
+        "Decision Record",
+        "Policy"
+      ]
+    },
+    "title": {
+      "description": "Human-readable title. It matches the level-one heading and the title of the file's index entry.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "description": {
+      "description": "One sentence saying what the document covers. It is reused as the description of the file's index entry.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "tags": {
+      "description": "Lowercase kebab-case keywords, unique within the document.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+      }
+    },
+    "status": {
+      "description": "Lifecycle state: draft for work in progress, stable for current content, deprecated for retired content.",
+      "enum": ["draft", "stable", "deprecated"]
+    },
+    "generated": {
+      "description": "Who or what wrote the document, one entry per contributor. Agents fill it from their own identity. Omit it for a document no agent touched.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/contributor" }
+    },
+    "verified": {
+      "description": "Added by a human only, after reading the document and finding it correct. An agent never writes this field.",
+      "$ref": "#/$defs/verified"
+    }
+  },
+  "$defs": {
+    "contributor": {
+      "description": "One agent contribution. The fields are the attributes of a Generated-by or Assisted-by trailer, except that role is the trailer key and at is added because a document has no commit date.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "harness", "model", "at"],
+      "properties": {
+        "role": {
+          "description": "The trailer key: generated for Generated-by (the agent wrote content), assisted for Assisted-by (the agent took part without writing content).",
+          "enum": ["generated", "assisted"]
+        },
+        "harness": {
+          "description": "Harness slug with an optional version after a colon, as in claude-code:2.1.316. Slugs: claude-code, codex, antigravity.",
+          "type": "string",
+          "pattern": "^(claude-code|codex|antigravity)(:[0-9A-Za-z][0-9A-Za-z._+-]*)?$"
+        },
+        "model": {
+          "description": "The creator's canonical API model ID with its provider, as <provider>:<model-id>. Providers are OpenTelemetry gen_ai.provider.name values: anthropic, openai, gcp.gemini. No effort suffix.",
+          "type": "string",
+          "pattern": "^(anthropic|openai|gcp\\.gemini):[0-9A-Za-z][0-9A-Za-z._-]*$"
+        },
+        "effort": {
+          "description": "Reasoning effort exactly as the harness reported it, lowercased, such as low, high, or max. Never mapped across vendors.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "surface": {
+          "description": "Raw passthrough of the harness surface, such as cli or claude-vscode. No whitespace, semicolons, or commas.",
+          "type": "string",
+          "pattern": "^[^\\s;,]+$"
+        },
+        "session": {
+          "description": "The root session as an unkeyed SHA-256 hash of its raw ID, leftmost 64 bits as 16 lowercase hex digits. A raw ID is never written.",
+          "$ref": "#/$defs/hashedId"
+        },
+        "subagent": {
+          "description": "The subagent that did the work, in the same hashed form as session. Omitted for the root agent.",
+          "$ref": "#/$defs/hashedId"
+        },
+        "at": {
+          "description": "When the contribution was made: a UTC ISO 8601 date-time with whole seconds and a Z suffix.",
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "verified": {
+      "description": "A human's sign-off on the document.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["by", "at"],
+      "properties": {
+        "by": {
+          "description": "The verifying person as human:<name>, where the name is lowercase. The human: prefix keeps this field apart from agent identities.",
+          "type": "string",
+          "pattern": "^human:[a-z0-9][a-z0-9._-]*$"
+        },
+        "at": {
+          "description": "When the person verified the document.",
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "hashedId": {
+      "description": "sha-256-64:<16 lowercase hex digits>, the IANA Named Information label for an unkeyed SHA-256 truncated to 64 bits.",
+      "type": "string",
+      "pattern": "^sha-256-64:[0-9a-f]{16}$"
+    },
+    "timestamp": {
+      "description": "UTC ISO 8601 date-time, whole seconds, Z suffix.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    }
+  }
+}

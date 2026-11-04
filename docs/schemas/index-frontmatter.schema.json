@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tbhb-dev/ascm/main/docs/schemas/index-frontmatter.schema.json",
+  "title": "ascm bundle-root index frontmatter",
+  "description": "Frontmatter of docs/index.md, the only index.md that carries any. It declares the OKF version and nothing else.",
+  "$comment": "Separate from frontmatter.schema.json because the root index is reserved and shares no field with ordinary documents. Any other index.md must have no frontmatter at all, which the validator enforces.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["okf_version"],
+  "properties": {
+    "okf_version": {
+      "description": "The OKF version the bundle conforms to. A quoted string, because the unquoted YAML 0.2 is a number.",
+      "const": "0.2"
+    }
+  }
+}
