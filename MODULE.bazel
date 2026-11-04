@@ -16,7 +16,7 @@ bazel_dep(name = "gazelle", version = "0.54.0")
 bazel_dep(name = "tbhb_rules", version = "0.0.0", dev_dependency = True)
 git_override(
     module_name = "tbhb_rules",
-    commit = "d2b050ac2830a0ea6f9e48e4e646d62279dfd798",
+    commit = "e5d8694c5304db4218b188255c3e6089271ed47f",
     remote = "https://github.com/tbhb-dev/rules.git",
 )
 
@@ -26,7 +26,7 @@ git_override(
 bazel_dep(name = "tbhb_rules_python", version = "0.0.0", dev_dependency = True)
 git_override(
     module_name = "tbhb_rules_python",
-    commit = "d2b050ac2830a0ea6f9e48e4e646d62279dfd798",
+    commit = "e5d8694c5304db4218b188255c3e6089271ed47f",
     remote = "https://github.com/tbhb-dev/rules.git",
     strip_prefix = "python",
 )
@@ -38,7 +38,7 @@ git_override(
 bazel_dep(name = "tbhb_rules_go", version = "0.0.0", dev_dependency = True)
 git_override(
     module_name = "tbhb_rules_go",
-    commit = "d2b050ac2830a0ea6f9e48e4e646d62279dfd798",
+    commit = "e5d8694c5304db4218b188255c3e6089271ed47f",
     remote = "https://github.com/tbhb-dev/rules.git",
     strip_prefix = "go",
 )

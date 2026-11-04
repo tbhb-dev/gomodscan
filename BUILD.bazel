@@ -28,7 +28,7 @@ load(
     "zizmor_test",
 )
 load("@tbhb_rules//repo:defs.bzl", "repo_files")
-load("@tbhb_rules_go//:defs.bzl", "go_arch_lint_test", "go_deadcode_test", "go_mod_tidy_test", "gobco_test", "gomutants_test", "govulncheck_test")
+load("@tbhb_rules_go//:defs.bzl", "go_arch_lint_test", "go_deadcode_test", "go_mod_tidy_test", "gobco_test", "gomutants_test", "govulncheck", "govulncheck_test")
 load("//:vale_packages.bzl", "VALE_PACKAGES")
 load("//tools/lint:linters.bzl", "golangci_lint_test")
 
@@ -59,6 +59,7 @@ BUILDIFIER_EXCLUDES = [
     "./.venv/*",
     "./.mise/*",
     "./bazel-*",
+    "./.bazel-*",
     "./node_modules/*",
     "./tmp/*",
 ]
@@ -146,10 +147,25 @@ go_mod_tidy_test(
 
 # Reachable vulnerabilities. Advisories change without any input changing, so
 # the rule tags the test manual, external and requires-network: it is not part
-# of //... and never cached. CI runs it as its own step and uploads the SARIF
-# report it writes.
+# of //... and never cached. CI runs the `govulncheck` companion below, which
+# writes a SARIF report as an artifact.
 govulncheck_test(
     name = "govulncheck_test",
+    srcs = GO_TARGETS,
+    data = [
+        "//cmd/gomodscan:testdata",
+        "//internal/findings:testdata",
+        "//internal/vendormod:testdata",
+    ],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+)
+
+# The same scan as a `bazel run` target, outside the test sandbox, which the
+# shared repository checks in CI run.
+govulncheck(
+    name = "govulncheck",
     srcs = GO_TARGETS,
     data = [
         "//cmd/gomodscan:testdata",

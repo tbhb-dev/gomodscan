@@ -6,6 +6,7 @@
     ".vale/**/*",
     ".venv/**/*",
     "bazel-*/**/*",
+    ".bazel-*/**/*",
     "coverage.xml",
     "go.sum",
     "LICENSE",

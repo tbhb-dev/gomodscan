@@ -19,6 +19,7 @@ exclude = [
   ".venv/**/*.toml",
   "tmp/**/*.toml",
   "bazel-*/**/*.toml",
+  ".bazel-*/**/*.toml",
   # Test fixtures, some deliberately malformed for failure proofs.
   "**/testdata/**/*.toml",
   # Generated lockfiles stay out of the format gate. They end in .lock not .toml,

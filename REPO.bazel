@@ -7,7 +7,10 @@
 # whole-tree checks (//:repo_files) never scan them.
 ignore_directories([
     ".git",
+    # Obsidian vault settings, from opening the repository as a vault.
+    ".obsidian",
     "bazel-*",
+    ".bazel-*",
     ".bazel_env",
     ".mise",
     ".venv",

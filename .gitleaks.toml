@@ -15,6 +15,7 @@ description = "Untracked build output, tool caches, and scratch space"
 paths = [
   '''^\.venv/''',
   '''^bazel-[^/]+/''',
+  '''^\.bazel-[^/]+/''',
   '''^\.mise/''',
   '''^\.vale/(Google|write-good|proselint|ai-tells[^/]*)/''',
   '''^tmp/''',
