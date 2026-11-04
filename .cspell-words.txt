@@ -4,6 +4,7 @@ addopts
 ascm
 autobuild
 autouse
+awrel
 bazelignore
 bazelisk
 bazelrc
@@ -94,6 +95,7 @@ maintidx
 malscan
 mapfile
 mapliteral
+mcpjson
 mdfile
 mdir
 modroot

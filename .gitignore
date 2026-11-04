@@ -44,3 +44,7 @@ coverage.xml
 
 # Agents draft PRs here; the PR script lints it and opens the PR from it.
 .github/PULL_REQUEST_DRAFT.md
+
+# Tracked here although global ignores often skip it: the pinned awrel MCP
+# server this repository runs in its own sessions.
+!.mcp.json
