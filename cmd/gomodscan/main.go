@@ -313,8 +313,13 @@ func reasonSentence(r string) string {
 	return "Reason: " + strings.TrimSpace(r) + "."
 }
 
+// exit ends the process. Tests replace it to observe the status main passes.
+//
+//nolint:gochecknoglobals // a test can't call os.Exit and survive
+var exit = os.Exit
+
 func main() {
-	os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
+	exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 // realMain wraps the imperative flag-parsing and exit-code wiring in a
@@ -396,14 +401,9 @@ func newVersionsClient(noCache bool, cacheDir string) *pkgsite.Client {
 		return plainVersionsClient()
 	}
 
-	dir := cacheDir
-	if dir == "" {
-		def, err := cachehttp.DefaultDir()
-		if err != nil {
-			return plainVersionsClient()
-		}
-
-		dir = def
+	dir, ok := resolveCacheDir(cacheDir)
+	if !ok {
+		return plainVersionsClient()
 	}
 
 	transport := cachehttp.NewTransport(
@@ -423,6 +423,22 @@ func newVersionsClient(noCache bool, cacheDir string) *pkgsite.Client {
 		},
 		UserAgent: "",
 	}
+}
+
+// resolveCacheDir returns the directory the caller asked for, or the per-user
+// default when the caller named none. It reports false when no default
+// directory can be located.
+func resolveCacheDir(cacheDir string) (string, bool) {
+	if cacheDir != "" {
+		return cacheDir, true
+	}
+
+	def, err := cachehttp.DefaultDir()
+	if err != nil {
+		return "", false
+	}
+
+	return def, true
 }
 
 // plainVersionsClient is the pkg.go.dev client with its defaults, which

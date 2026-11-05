@@ -21,8 +21,9 @@ const devFallback = "DEV"
 //nolint:gochecknoglobals // ldflags -X can only patch package-level vars
 var (
 	// Version holds the semantic version of the build. Set via ldflags, or
-	// resolved from the runtime/debug build info at init time.
-	Version = devFallback
+	// resolved from the runtime/debug build info at init time. It starts empty
+	// so that the init step, not the initializer, supplies the placeholder.
+	Version = ""
 
 	// Commit holds the short git SHA of the build.
 	Commit = ""

@@ -125,7 +125,7 @@ func (t *transport) fresh(req *http.Request, key string) (*http.Response, bool) 
 // encode skips the write yet still returns the buffered body.
 func (t *transport) cache(key string, resp *http.Response) *http.Response {
 	ctl := parseCacheControl(resp.Header.Get("Cache-Control"))
-	if resp.StatusCode != http.StatusOK || !ctl.present || ctl.noStore || ctl.maxAge <= 0 {
+	if resp.StatusCode != http.StatusOK || !ctl.present || ctl.noStore || ctl.maxAge < time.Second {
 		return resp
 	}
 
@@ -220,8 +220,9 @@ func parseCacheControl(header string) cacheControl {
 			ctl.noStore = true
 		} else if value, ok := strings.CutPrefix(directive, "max-age="); ok {
 			secs, err := strconv.Atoi(value)
-			if err == nil && secs > 0 {
-				ctl.maxAge = time.Duration(secs) * time.Second
+			if err == nil {
+				// A negative max-age counts as zero.
+				ctl.maxAge = time.Duration(max(secs, 0)) * time.Second
 			}
 		}
 	}
@@ -234,11 +235,12 @@ func parseCacheControl(header string) cacheControl {
 // aged in pkg.go.dev's fronting cache from over-staying its freshness window.
 func age(header string) time.Duration {
 	secs, err := strconv.Atoi(strings.TrimSpace(header))
-	if err != nil || secs < 0 {
+	if err != nil {
 		return 0
 	}
 
-	return time.Duration(secs) * time.Second
+	// A negative Age is nonsense, so it counts as zero.
+	return time.Duration(max(secs, 0)) * time.Second
 }
 
 func encode(e entry) []byte {

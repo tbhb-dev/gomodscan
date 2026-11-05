@@ -276,6 +276,7 @@ func TestWriteSARIF_RejectsInvalidReport(t *testing.T) {
 	err := findings.WriteSARIF(&buf, run)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "validate sarif")
+	require.Error(t, errors.Unwrap(err), "the validation failure stays in the error chain")
 	assert.Empty(t, buf.String())
 }
 

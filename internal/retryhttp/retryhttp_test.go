@@ -382,3 +382,113 @@ func TestNewTransport_RetriesPerAttemptTimeout(t *testing.T) {
 		assert.Equal(t, int32(retryhttp.MaxRetries+1), count.Load(), "each timed-out attempt should be retried")
 	})
 }
+
+// A request that answers just inside the 30 s attempt timeout completes at
+// once, and one that answers just past it times out and is retried. This pins
+// retryhttp.AttemptTimeout to the 30 s its documentation states.
+func TestAttemptTimeout_CutsAnAttemptOffAtThirtySeconds(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		answerAfter  time.Duration
+		wantAttempts int32
+		wantErr      bool
+	}{
+		{name: "just inside", answerAfter: 30*time.Second - time.Millisecond, wantAttempts: 1, wantErr: false},
+		{
+			name:         "just past",
+			answerAfter:  30*time.Second + time.Millisecond,
+			wantAttempts: retryhttp.MaxRetries + 1,
+			wantErr:      true,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				client, count := retryClient(retryhttp.AttemptTimeout,
+					func(_ int32, req *http.Request) (*http.Response, error) {
+						select {
+						case <-time.After(testCase.answerAfter):
+							return fakeResponse(req, http.StatusOK, okBody), nil
+						case <-req.Context().Done():
+							return nil, req.Context().Err()
+						}
+					})
+
+				resp, err := get(t, client)
+				if resp != nil {
+					t.Cleanup(func() { _ = resp.Body.Close() })
+				}
+
+				if testCase.wantErr {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+
+				assert.Equal(t, testCase.wantAttempts, count.Load())
+			})
+		})
+	}
+}
+
+// MaxDelay caps the backoff, and it matches the 30 s Retry-After pkg.go.dev
+// sends. The other defaults go with it, since every client shares one retry
+// schedule.
+func TestDefaults_MatchTheDocumentedSchedule(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 3, retryhttp.MaxRetries)
+	assert.Equal(t, time.Second, retryhttp.InitialDelay)
+	assert.Equal(t, 30*time.Second, retryhttp.MaxDelay)
+	assert.Equal(t, 30*time.Second, retryhttp.AttemptTimeout)
+}
+
+// Each wait before a retry falls within 25% of its backoff step, never
+// further. The jitter is random. The test samples many sequences, and every
+// wait of every sequence has to stay in range while the waits vary.
+func TestNewTransport_JitterStaysWithinAQuarterOfEachStep(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		const samples = 200
+
+		steps := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
+		firstWaits := make(map[time.Duration]bool)
+
+		for range samples {
+			var attemptTimes []time.Time
+
+			inner := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				attemptTimes = append(attemptTimes, time.Now())
+
+				return fakeResponse(req, http.StatusBadGateway, "upstream down"), nil
+			})
+			client := &http.Client{
+				Transport: retryhttp.NewTransport(
+					inner, retryhttp.InitialDelay, retryhttp.MaxDelay, retryhttp.AttemptTimeout,
+				),
+				CheckRedirect: nil,
+				Jar:           nil,
+				Timeout:       0,
+			}
+
+			resp, err := get(t, client)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Len(t, attemptTimes, len(steps)+1)
+
+			for i, step := range steps {
+				wait := attemptTimes[i+1].Sub(attemptTimes[i])
+				assert.GreaterOrEqual(t, wait, step*3/4, "wait %d falls short of 75%% of its step", i+1)
+				assert.LessOrEqual(t, wait, step*5/4, "wait %d runs past 125%% of its step", i+1)
+			}
+
+			firstWaits[attemptTimes[1].Sub(attemptTimes[0])] = true
+		}
+
+		assert.Greater(t, len(firstWaits), 1, "the jitter varies the wait from one sequence to the next")
+	})
+}

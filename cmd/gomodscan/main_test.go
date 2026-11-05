@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.tbhb.dev/gomodscan/internal/buildmeta"
+	"go.tbhb.dev/gomodscan/internal/cachehttp"
 	"go.tbhb.dev/gomodscan/internal/exitcode"
 	"go.tbhb.dev/gomodscan/internal/findings"
 	"go.tbhb.dev/gomodscan/internal/osv"
@@ -165,6 +168,14 @@ func TestFindingProps(t *testing.T) {
 				line:    0,
 			},
 			want: map[string]string{reasonKey: checksumReason},
+		},
+		{
+			name: "retracted ignores a stray latest version",
+			f: finding{
+				kind: kindRetracted, module: modA, version: v100, latest: v020,
+				reason: "", id: "", summary: "", line: 0,
+			},
+			want: map[string]string{},
 		},
 		{
 			name: "deprecated emits latest and reason",
@@ -1767,6 +1778,19 @@ func TestRealMain(t *testing.T) {
 		assert.Contains(t, errOut.String(), "gomodscan: read vendored modules:")
 	})
 
+	t.Run("a failed findings write returns ToolFailure", func(t *testing.T) {
+		t.Parallel()
+		outDir := readOnlyDir(t)
+
+		var out, errOut bytes.Buffer
+
+		code := realMain([]string{
+			flagModroot, fixtureRoot("empty"), "-o", filepath.Join(outDir, "findings.txt"),
+		}, &out, &errOut)
+		assert.Equal(t, exitcode.ToolFailure, code)
+		assert.Contains(t, errOut.String(), "gomodscan: emit findings:")
+	})
+
 	t.Run("short and long output flags write the file", func(t *testing.T) {
 		t.Parallel()
 
@@ -1857,6 +1881,11 @@ func TestNewVersionsClient(t *testing.T) {
 		t.Parallel()
 		c := newVersionsClient(false, t.TempDir())
 		assert.NotNil(t, c.HTTPClient, "with caching on the client carries its own cache+retry transport")
+		assert.Zero(
+			t,
+			c.HTTPClient.Timeout,
+			"the retry transport bounds each attempt, so the client sets no overall timeout",
+		)
 	})
 }
 
@@ -2017,3 +2046,140 @@ const (
 	stepSync  = "sync"
 	stepClose = "close"
 )
+
+func TestResolveCacheDir(t *testing.T) {
+	t.Parallel()
+
+	t.Run("an explicit directory wins", func(t *testing.T) {
+		t.Parallel()
+
+		dir, ok := resolveCacheDir("explicit")
+		assert.True(t, ok)
+		assert.Equal(t, "explicit", dir)
+	})
+
+	t.Run("an empty directory resolves to the per-user default", func(t *testing.T) {
+		t.Parallel()
+
+		want, err := cachehttp.DefaultDir()
+		require.NoError(t, err)
+		require.NotEmpty(t, want)
+
+		dir, ok := resolveCacheDir("")
+		assert.True(t, ok)
+		assert.Equal(t, want, dir)
+	})
+}
+
+func TestSummaryAddError_RecordsRetryDetailOnlyForRetryErrors(t *testing.T) {
+	t.Parallel()
+
+	mod := vendormod.Module{Path: modA, Version: v100, Line: 1}
+
+	t.Run("a plain error records no attempts or status", func(t *testing.T) {
+		t.Parallel()
+
+		sum := newSummary(1)
+		sum.addError(io.Discard, mod, lookupVulns, errQueryFailure)
+
+		require.Len(t, sum.Errors, 1)
+		assert.Equal(t, lookupError{
+			Module: modA + "@" + v100, Lookup: lookupVulns, Error: errQueryFailure.Error(),
+			Attempts: 0, LastStatus: 0,
+		}, sum.Errors[0])
+	})
+
+	t.Run("a retry error records its attempts and last status", func(t *testing.T) {
+		t.Parallel()
+
+		sum := newSummary(1)
+		sum.addError(io.Discard, mod, lookupVersions, exhaustedLookup())
+
+		require.Len(t, sum.Errors, 1)
+		assert.Equal(t, retryhttp.MaxRetries+1, sum.Errors[0].Attempts)
+		assert.Equal(t, http.StatusServiceUnavailable, sum.Errors[0].LastStatus)
+	})
+}
+
+func TestCollectMalicious_KeepsTheAdvisorySummary(t *testing.T) {
+	t.Parallel()
+
+	mod := vendormod.Module{Path: modA, Version: v100, Line: 1}
+	vulns := []osv.Vulnerability{
+		{ID: malID, Summary: backdoor, Details: "", Modified: "", Published: "", Aliases: nil},
+	}
+
+	got := collectMalicious(mod, vulns)
+	require.Len(t, got, 1)
+	assert.Equal(t, backdoor, got[0].summary)
+}
+
+func TestRun_WrapsTheVendorReadError(t *testing.T) {
+	t.Parallel()
+
+	opts := options{modroot: t.TempDir(), format: formatText, output: "", summaryJSON: ""}
+
+	_, err := run(
+		t.Context(),
+		opts,
+		&fakeVersionsClient{responses: nil, errors: nil},
+		&fakeVulnsClient{responses: nil, errors: nil},
+		io.Discard,
+		io.Discard,
+	)
+	require.Error(t, err)
+	require.ErrorIs(t, err, fs.ErrNotExist, "the cause of the missing vendor tree stays in the error chain")
+}
+
+func TestWriteFileAtomic_WrapsTheTempFileError(t *testing.T) {
+	t.Parallel()
+
+	err := writeFileAtomic(filepath.Join(t.TempDir(), "missing", "out"), []byte("data"))
+	require.ErrorIs(t, err, fs.ErrNotExist, "the cause of the failed create stays in the error chain")
+}
+
+func TestCommitTemp_WrapsTheRenameError(t *testing.T) {
+	t.Parallel()
+
+	// The fake file has no counterpart on disk, so renaming it fails.
+	err := commitTemp(&fakeTemp{writeErr: nil, syncErr: nil, closeErr: nil, steps: nil}, "out", []byte("data"))
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	require.ErrorContains(t, err, "replace out: ")
+}
+
+// swapProcessState points os.Args and os.Stdout at the given values, replaces
+// the exit function, and restores all three when the test ends.
+//
+//nolint:reassign // main reads these process-wide variables, so the test has to swap them
+func swapProcessState(t *testing.T, args []string, stdout *os.File, exitFn func(int)) {
+	t.Helper()
+
+	oldArgs, oldStdout, oldExit := os.Args, os.Stdout, exit
+
+	t.Cleanup(func() { os.Args, os.Stdout, exit = oldArgs, oldStdout, oldExit })
+
+	os.Args, os.Stdout, exit = args, stdout, exitFn
+}
+
+// A test can't let main call os.Exit, so it swaps the exit function and the
+// process-wide arguments and stdout, which rules out running it in parallel.
+//
+//nolint:paralleltest // main reads os.Args and os.Stdout, which are process-wide
+func TestMainPassesRealMainsStatusToExit(t *testing.T) {
+	stdout, err := os.CreateTemp(t.TempDir(), "stdout")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = stdout.Close() })
+
+	status := -1
+
+	swapProcessState(t, []string{"gomodscan", flagVersion}, stdout, func(code int) { status = code })
+
+	main()
+
+	assert.Equal(t, exitcode.OK, status)
+
+	printed, err := os.ReadFile(stdout.Name())
+	require.NoError(t, err)
+	assert.Contains(t, string(printed), "gomodscan ")
+}

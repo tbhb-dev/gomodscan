@@ -81,7 +81,7 @@ func Parse(r io.Reader) ([]Module, error) {
 	var mods []Module
 
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, scannerInitialBufSize), scannerMaxBufSize)
+	scanner.Buffer(make([]byte, scannerInitialBufSize), scannerMaxBufSize)
 
 	lineNo := 0
 	for scanner.Scan() {
@@ -92,13 +92,12 @@ func Parse(r io.Reader) ([]Module, error) {
 			continue
 		}
 
-		mod, ok := parseLine(strings.TrimPrefix(line, "# "))
-		if !ok {
+		mod := parseLine(strings.TrimPrefix(line, "# "), lineNo)
+		if mod == nil {
 			continue
 		}
 
-		mod.Line = lineNo
-		mods = append(mods, mod)
+		mods = append(mods, *mod)
 	}
 
 	err := scanner.Err()
@@ -110,9 +109,9 @@ func Parse(r io.Reader) ([]Module, error) {
 }
 
 // parseLine parses one declaration after the caller strips the
-// "# " prefix. Returns a false second return for replaced-to-local
-// modules and other forms the parser can't handle. The caller drops
-// those.
+// "# " prefix, and stamps the module with the line number it came from.
+// Returns nil for replaced-to-local modules and other forms the parser can't
+// handle. The caller drops those.
 //
 // Recognized forms with their resolved Module entry:
 //
@@ -127,15 +126,15 @@ func Parse(r io.Reader) ([]Module, error) {
 // through mutation testing. The if/else chain rather than a
 // switch-true form keeps each predicate inside a statement block
 // that Go's coverage profile can attach a count to.
-func parseLine(line string) (Module, bool) {
+func parseLine(line string, lineNo int) *Module {
 	fields := strings.Fields(line)
 	if len(fields) >= 4 && fields[len(fields)-3] == "=>" {
-		return Module{Path: fields[len(fields)-2], Version: fields[len(fields)-1], Line: 0}, true
+		return &Module{Path: fields[len(fields)-2], Version: fields[len(fields)-1], Line: lineNo}
 	}
 
 	if len(fields) == plainModuleFields {
-		return Module{Path: fields[0], Version: fields[1], Line: 0}, true
+		return &Module{Path: fields[0], Version: fields[1], Line: lineNo}
 	}
 
-	return Module{Path: "", Version: "", Line: 0}, false
+	return nil
 }

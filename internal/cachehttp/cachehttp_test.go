@@ -122,12 +122,22 @@ func cachingClient(
 	}, &count
 }
 
+// okClient is a caching client over a fresh in-memory store whose origin
+// answers every request with a 200 and the given Cache-Control value.
+func okClient(cacheControl string) (*http.Client, *atomic.Int32) {
+	return cachingClient(newMemStore(), func(req *http.Request) *http.Response {
+		return reply(req, http.StatusOK, okBody, cacheControl)
+	})
+}
+
 // result captures the part of a response the cache tests assert on, taken
 // after fetch fully reads and closes the body.
 type result struct {
-	header http.Header
-	body   string
-	status int
+	header     http.Header
+	body       string
+	status     int
+	protoMajor int
+	protoMinor int
 }
 
 // fromCache reports whether the transport served this result from the store.
@@ -148,7 +158,13 @@ func fetch(t *testing.T, client *http.Client, method string) result {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	return result{status: resp.StatusCode, header: resp.Header, body: string(body)}
+	return result{
+		status:     resp.StatusCode,
+		header:     resp.Header,
+		body:       string(body),
+		protoMajor: resp.ProtoMajor,
+		protoMinor: resp.ProtoMinor,
+	}
 }
 
 func TestTransport_ServesFreshHitThenRefreshesWhenStale(t *testing.T) {
@@ -441,6 +457,7 @@ func TestDefaultDir_ErrorsWithoutHome(t *testing.T) {
 
 	_, err := cachehttp.DefaultDir()
 	require.Error(t, err)
+	require.Error(t, errors.Unwrap(err), "the os.UserCacheDir failure stays in the error chain")
 }
 
 //nolint:dupl // test scenarios repeat the same arrange and assert steps
@@ -505,4 +522,155 @@ func TestTransport_IgnoresNegativeAge(t *testing.T) {
 		assert.False(t, fetch(t, client, http.MethodGet).fromCache(), "a negative Age must not extend the window")
 		assert.Equal(t, int32(2), count.Load())
 	})
+}
+
+func TestTransport_RoundTripReturnsTheInnerResponseAndError(t *testing.T) {
+	t.Parallel()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, moduleURL, nil)
+	require.NoError(t, err)
+
+	// A RoundTripper that fails after it built a response is unusual, yet the
+	// cache must hand both back untouched rather than drop either one.
+	want := reply(req, http.StatusBadGateway, "", "max-age=3600")
+
+	t.Cleanup(func() { _ = want.Body.Close() })
+
+	inner := roundTripperFunc(func(*http.Request) (*http.Response, error) { return want, errBoom })
+
+	transport := cachehttp.NewTransport(inner, newMemStore())
+
+	//nolint:bodyclose // want's body closes in the cleanup above.
+	got, err := transport.RoundTrip(req)
+	require.ErrorIs(t, err, errBoom)
+	assert.Same(t, want, got)
+}
+
+func TestTransport_DoesNotCacheAnythingButA200(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusPartialContent, http.StatusNotFound, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+
+			store := newMemStore()
+			client, count := cachingClient(store, func(req *http.Request) *http.Response {
+				return reply(req, status, okBody, "max-age=3600")
+			})
+
+			fetch(t, client, http.MethodGet)
+			fetch(t, client, http.MethodGet)
+			assert.Equal(t, int32(2), count.Load(), "only a 200 earns a cache entry")
+			assert.Zero(t, store.len())
+		})
+	}
+}
+
+//nolint:dupl // test scenarios repeat the same arrange and assert steps
+func TestTransport_CacheControlSkipsEmptyDirectives(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a leading empty directive does not hide max-age", func(t *testing.T) {
+		t.Parallel()
+
+		store := newMemStore()
+		client, count := cachingClient(store, func(req *http.Request) *http.Response {
+			return reply(req, http.StatusOK, okBody, ", max-age=3600")
+		})
+
+		fetch(t, client, http.MethodGet)
+		assert.True(t, fetch(t, client, http.MethodGet).fromCache())
+		assert.Equal(t, int32(1), count.Load())
+	})
+
+	t.Run("an empty directive does not end the parse before no-store", func(t *testing.T) {
+		t.Parallel()
+
+		store := newMemStore()
+		client, count := cachingClient(store, func(req *http.Request) *http.Response {
+			return reply(req, http.StatusOK, okBody, "max-age=3600,,no-store")
+		})
+
+		fetch(t, client, http.MethodGet)
+		fetch(t, client, http.MethodGet)
+		assert.Equal(t, int32(2), count.Load())
+		assert.Zero(t, store.len())
+	})
+}
+
+func TestTransport_CachesAOneSecondMaxAge(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		client, count := okClient("max-age=1")
+
+		fetch(t, client, http.MethodGet)
+		assert.True(t, fetch(t, client, http.MethodGet).fromCache(), "max-age=1 is a real one-second window")
+
+		time.Sleep(2 * time.Second)
+		assert.False(t, fetch(t, client, http.MethodGet).fromCache())
+		assert.Equal(t, int32(2), count.Load())
+	})
+}
+
+func TestTransport_IgnoresAMaxAgeThatOverflows(t *testing.T) {
+	t.Parallel()
+
+	for _, directive := range []string{"max-age=99999999999999999999", "max-age=-5"} {
+		t.Run(directive, func(t *testing.T) {
+			t.Parallel()
+
+			store := newMemStore()
+			client, count := cachingClient(store, func(req *http.Request) *http.Response {
+				return reply(req, http.StatusOK, okBody, directive)
+			})
+
+			fetch(t, client, http.MethodGet)
+			fetch(t, client, http.MethodGet)
+			assert.Equal(t, int32(2), count.Load())
+			assert.Zero(t, store.len())
+		})
+	}
+}
+
+// hiddenStore reports every lookup as a miss while it still hands back the
+// blob its embedded store holds. A Store may do that, because the blob means
+// nothing when the second result is false.
+type hiddenStore struct{ *memStore }
+
+func (h hiddenStore) Get(key string) ([]byte, bool) {
+	blob, _ := h.memStore.Get(key)
+
+	return blob, false
+}
+
+//nolint:dupl // test scenarios repeat the same arrange and assert steps
+func TestTransport_TrustsTheStoreMissFlagOverTheBlob(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	warm, _ := cachingClient(store, func(req *http.Request) *http.Response {
+		return reply(req, http.StatusOK, okBody, "max-age=3600")
+	})
+	fetch(t, warm, http.MethodGet)
+	require.Equal(t, 1, store.len(), "the warm-up fetch leaves a fresh entry in the store")
+
+	client, count := cachingClient(hiddenStore{memStore: store}, func(req *http.Request) *http.Response {
+		return reply(req, http.StatusOK, okBody, "max-age=3600")
+	})
+
+	assert.False(t, fetch(t, client, http.MethodGet).fromCache(), "a miss flag means miss, whatever blob came with it")
+	assert.Equal(t, int32(1), count.Load())
+}
+
+func TestTransport_RebuildsAnHTTP11Response(t *testing.T) {
+	t.Parallel()
+
+	client, _ := okClient("max-age=3600")
+
+	fetch(t, client, http.MethodGet)
+
+	hit := fetch(t, client, http.MethodGet)
+	require.True(t, hit.fromCache())
+	assert.Equal(t, 1, hit.protoMajor)
+	assert.Equal(t, 1, hit.protoMinor)
 }

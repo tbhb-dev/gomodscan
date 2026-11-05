@@ -4,6 +4,8 @@
 package vendormod_test
 
 import (
+	"bufio"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -94,6 +96,14 @@ example.com/strange
 			want: nil,
 		},
 		{
+			name: "three fields that start with the arrow drop the entry",
+			in: `# => example.com/new v9.9.9
+## explicit
+example.com/old
+`,
+			want: nil,
+		},
+		{
 			name: "single-field header drops via the default branch",
 			in: `# loner
 ## explicit
@@ -154,6 +164,65 @@ func TestParseReportsScannerError(t *testing.T) {
 	_, err := vendormod.Parse(strings.NewReader(huge))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "scan:")
+	require.ErrorIs(t, err, bufio.ErrTooLong)
+}
+
+// firstReadSize records the length of the buffer the scanner hands to its
+// reader on the first read, which is the scanner's initial buffer size.
+type firstReadSize struct {
+	r    io.Reader
+	size int
+	read bool
+}
+
+func (f *firstReadSize) Read(buf []byte) (int, error) {
+	if !f.read {
+		f.read = true
+		f.size = len(buf)
+	}
+
+	return f.r.Read(buf) //nolint:wrapcheck // a transparent wrapper, so the scanner sees the reader's own error
+}
+
+// The scanner starts with a 64 KiB buffer, so a typical vendor/modules.txt
+// is read in one pass.
+func TestParseStartsWithA64KiBBuffer(t *testing.T) {
+	t.Parallel()
+
+	reader := &firstReadSize{r: strings.NewReader("# example.com/m v1.0.0\n"), size: 0, read: false}
+
+	got, err := vendormod.Parse(reader)
+	require.NoError(t, err)
+	assert.Len(t, got, 1)
+	assert.Equal(t, 1<<16, reader.size)
+}
+
+// The scanner takes a line of nearly 1 MiB, well past the 64 KiB default
+// token limit, and the module on it keeps its line number.
+func TestParseAcceptsLongLines(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		version string
+	}{
+		{name: "past the default scanner cap", version: strings.Repeat("v", 100_000)},
+		{name: "just under the 1 MiB cap", version: strings.Repeat("v", (1<<20)-100)},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := "## explicit\n# example.com/big " + testCase.version + "\n"
+
+			got, err := vendormod.Parse(strings.NewReader(in))
+			require.NoError(t, err)
+			assert.Equal(t, []vendormod.Module{
+				{Path: "example.com/big", Version: testCase.version, Line: 2},
+			}, got)
+		})
+	}
 }
 
 func TestRead(t *testing.T) {
@@ -202,6 +271,7 @@ func TestRead(t *testing.T) {
 		assert.Nil(t, got)
 		assert.Contains(t, err.Error(), "parse ")
 		assert.Contains(t, err.Error(), "scan:")
+		require.ErrorIs(t, err, bufio.ErrTooLong)
 	})
 }
 

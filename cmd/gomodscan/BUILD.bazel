@@ -40,6 +40,7 @@ go_test(
     visibility = ["//:__pkg__"],
     deps = [
         "//internal/buildmeta",
+        "//internal/cachehttp",
         "//internal/exitcode",
         "//internal/findings",
         "//internal/osv",

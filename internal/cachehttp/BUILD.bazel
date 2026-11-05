@@ -18,6 +18,7 @@ go_test(
     srcs = [
         "cachehttp_internal_test.go",
         "cachehttp_test.go",
+        "cachehttp_unix_test.go",
     ],
     embed = [":cachehttp"],
     visibility = ["//:__pkg__"],
