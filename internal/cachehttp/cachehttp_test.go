@@ -352,8 +352,13 @@ func TestDiskStore_ConcurrentPutSameKey(t *testing.T) {
 	assert.True(t, strings.HasPrefix(string(got), "value-"), "the stored value is one intact write, got %q", got)
 }
 
+// The per-user cache base comes from the environment, and a sandbox may
+// strip it. This test sets every variable os.UserCacheDir consults.
 func TestDefaultDir(t *testing.T) {
-	t.Parallel()
+	base := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", base)
+	t.Setenv("HOME", base)
+	t.Setenv("LocalAppData", base)
 
 	dir, err := cachehttp.DefaultDir()
 	require.NoError(t, err)
