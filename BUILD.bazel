@@ -192,6 +192,14 @@ gomutants_test(
         "//internal/findings:testdata",
         "//internal/vendormod:testdata",
     ],
+    flags = [
+        # On the CI runners some osv and pkgsite mutants ran past the default
+        # ceiling, which scales one baseline run per package, before a test
+        # failed. A floor keeps runner load from reading as a timeout, and
+        # -failfast ends the run at the first failing test. awrel sets both.
+        "--timeout-min=20s",
+        "--test-flags=-failfast",
+    ],
     go_mod = "go.mod",
     go_sum = "go.sum",
     proxy = "@go_mod_proxy//:proxy",
