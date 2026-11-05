@@ -2057,18 +2057,23 @@ func TestResolveCacheDir(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "explicit", dir)
 	})
+}
 
-	t.Run("an empty directory resolves to the per-user default", func(t *testing.T) {
-		t.Parallel()
+// The per-user default reads the environment, and a sandbox may strip it.
+// This test sets every variable os.UserCacheDir consults.
+func TestResolveCacheDir_EmptyResolvesToPerUserDefault(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", base)
+	t.Setenv("HOME", base)
+	t.Setenv("LocalAppData", base)
 
-		want, err := cachehttp.DefaultDir()
-		require.NoError(t, err)
-		require.NotEmpty(t, want)
+	want, err := cachehttp.DefaultDir()
+	require.NoError(t, err)
+	require.NotEmpty(t, want)
 
-		dir, ok := resolveCacheDir("")
-		assert.True(t, ok)
-		assert.Equal(t, want, dir)
-	})
+	dir, ok := resolveCacheDir("")
+	assert.True(t, ok)
+	assert.Equal(t, want, dir)
 }
 
 func TestSummaryAddError_RecordsRetryDetailOnlyForRetryErrors(t *testing.T) {
