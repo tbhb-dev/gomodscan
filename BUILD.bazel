@@ -203,6 +203,13 @@ gomutants_test(
     go_mod = "go.mod",
     go_sum = "go.sum",
     proxy = "@go_mod_proxy//:proxy",
+    # Windows doesn't enforce Unix mode bits, so a mutated file permission
+    # can't be told apart there. No package has Windows-only code, so
+    # mutation testing runs on Linux and macOS only.
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tests = GO_TESTS,
 )
 
