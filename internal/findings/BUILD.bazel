@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@tbhb_rules//repo:defs.bzl", "repo_files")
+
+repo_files()
+
+go_library(
+    name = "findings",
+    srcs = ["findings.go"],
+    importpath = "go.tbhb.dev/gomodscan/internal/findings",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@com_github_owenrumney_go_sarif_v3//pkg/report",
+        "@com_github_owenrumney_go_sarif_v3//pkg/report/v210/sarif",
+    ],
+)
+
+go_test(
+    name = "findings_test",
+    srcs = ["findings_test.go"],
+    data = glob(["testdata/**"]),
+    visibility = ["//:__pkg__"],
+    deps = [
+        ":findings",
+        "@com_github_owenrumney_go_sarif_v3//pkg/report/v210/sarif",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+    # The whole-module Go checks in the root package take the tests too.
+)
+
+# The fixtures also go to the condition-coverage target in the root package.
+filegroup(
+    name = "testdata",
+    srcs = glob(["testdata/**"]),
+    visibility = ["//:__pkg__"],
+)

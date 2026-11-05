@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+# Directories that hold no source of this repository: VCS metadata, Python
+# environments, tool caches, agent worktrees and scratch
+# work. Ignoring them keeps them out of every package and every glob, so the
+# whole-tree checks (//:repo_files) never scan them.
+ignore_directories([
+    ".git",
+    # Obsidian vault settings, from opening the repository as a vault.
+    ".obsidian",
+    "bazel-*",
+    ".bazel-*",
+    ".bazel_env",
+    ".mise",
+    ".venv",
+    "tmp",
+    ".worktrees",
+    ".claude/worktrees",
+    "**/__pycache__",
+    "**/.*_cache",
+    ".hypothesis",
+    ".mypy_cache",
+    "node_modules",
+])

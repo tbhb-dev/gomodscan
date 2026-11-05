@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
 ---
 extends: substitution
 message: "Use '%s' instead of '%s'."
@@ -47,7 +50,8 @@ swap:
   curated roles: predefined roles
   data are: data is
   Developers Console: Google API Console|API Console
-  disabled?: turn off|off
+  # Not followed by a hyphen, so gomutants:disable-next-line passes.
+  'disabled?(?:[^-\w]|$)': turn off|off
   ephemeral IP address: ephemeral external IP address
   fewer data: less data
   file name: filename

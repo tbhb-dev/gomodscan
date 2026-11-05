@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@tbhb_rules//repo:defs.bzl", "repo_files")
+
+repo_files()
+
+go_library(
+    name = "vendormod",
+    srcs = ["vendormod.go"],
+    importpath = "go.tbhb.dev/gomodscan/internal/vendormod",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "vendormod_test",
+    srcs = ["vendormod_test.go"],
+    data = glob(["testdata/**"]) + ["//:go.mod"],  # keep
+    visibility = ["//:__pkg__"],
+    deps = [
+        ":vendormod",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+    # The whole-module Go checks in the root package take the tests too.
+)
+
+# The fixtures also go to the condition-coverage target in the root package.
+filegroup(
+    name = "testdata",
+    srcs = glob(["testdata/**"]),
+    visibility = ["//:__pkg__"],
+)

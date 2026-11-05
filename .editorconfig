@@ -8,18 +8,13 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
+[*.{bat,cmd}]
+end_of_line = crlf
+
 [*.go]
 indent_style = tab
 
-[*.{html,j2}]
-indent_style = space
-indent_size = 2
-
-[*.css]
-indent_style = space
-indent_size = 2
-
-[*.{js,ts}]
+[{*.bzl,BUILD,BUILD.bazel,MODULE.bazel,WORKSPACE,*.bazelrc,.bazelrc}]
 indent_style = space
 indent_size = 2
 
@@ -31,10 +26,6 @@ indent_size = 2
 indent_style = space
 indent_size = 2
 
-[*.md]
-trim_trailing_whitespace = false
-max_line_length = off
-
 [*.toml]
 indent_style = space
 indent_size = 2
@@ -43,10 +34,6 @@ indent_size = 2
 indent_style = space
 indent_size = 2
 
-[*.{ini,cfg,conf}]
-indent_style = space
-indent_size = 2
-
-[*.{xml,svg}]
-indent_style = space
-indent_size = 2
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off

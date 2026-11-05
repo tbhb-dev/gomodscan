@@ -1,196 +1,116 @@
 ---
-default_stages: [pre-commit, pre-push]
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
 
-# Hooks never touch vendored third-party code; that source is reviewed at PR
-# time as part of vendor-check, not reformatted to match this repo's style.
-# vendor/ stays out of this global exclusion so the scan hook sees
-# vendored dependency changes; each hook that reads files excludes it.
-exclude: |
-  (?x)^(bin/|dist/|coverage/|tmp/|logs/|spikes/|apm_modules/|\.devtools/|\.config/mise/|\.claude/|\.vale/
-  |vendir\.lock\.yml$|apm\.lock\.yaml$)
+# Git hooks for this clone, installed by tools/interim/install.sh (run from the
+# Claude Code SessionStart hook, or by hand). The lint and format hooks call
+# the Bazel-pinned tools through the bazel_env shims in .bazel_env/bin
+# (`bazel run //:bazel_env` builds them), never `bazel run`, so a running
+# build's server lock can't stall a commit. They are the fast per-file
+# subset; `bazel test //...` runs every gate, whole-tree ones included.
+default_stages: [pre-commit]
 
-# Every hook that runs a project tool goes through `mise run <task>`, so
-# the hook and the `mise run` gate execute the same pinned binary. The
-# devtools block keeps its own `rev:`, pinned by SHA with a `# frozen:`
-# tag comment that devtools:check-pins reads and Renovate's pre-commit
-# manager tracks.
-#
-# Install with `mise run devtools:prek-install`, which sets up the
-# commit-msg, pre-commit, pre-push, and post-commit stages.
+# Never touch Vale's synced style packages, build output, scratch work, agent
+# worktrees, or test fixtures (failure-proof fixtures are
+# deliberately malformed).
+exclude: ^(\.vale/(Google|write-good|proselint|ai-tells.*)/|\.bazel-.*/|bazel-.*/|tmp/|\.worktrees/|(.*/)?testdata/)
 
 repos:
   - repo: builtin
     hooks:
       - id: check-case-conflict
-        exclude: ^vendor/
       - id: check-executables-have-shebangs
-        exclude: ^vendor/
       - id: check-merge-conflict
-        exclude: ^vendor/
       - id: check-symlinks
-        exclude: ^vendor/
       - id: end-of-file-fixer
-        exclude: ^vendor/
       - id: fix-byte-order-marker
-        exclude: ^vendor/
       - id: mixed-line-ending
-        exclude: ^vendor/
       - id: trailing-whitespace
-        exclude: ^vendor/
 
-  # The shared hooks: the commit-msg gates, the post-commit hook that deletes
-  # the COMMIT_AGENTMSG draft once a commit lands, guard-markdown, and the
-  # leak check at three stages. vale-commit-msg and cspell-commit-msg read
-  # this repository's .vale.ini and .cspell.jsonc. leaks-staged scans the
-  # index blobs, so a private value cannot hide behind a cleaned working
-  # file. leaks-pre-push and commit-msg-pre-push only assert that the
-  # install-pre-push wrapper sits in front of prek's pre-push hook, because
-  # prek hides git's ref lines from its hooks. The published gomodscan hook
-  # runs `go tool gomodscan`, and this module has no tool directive for
-  # itself, so the local scan hook below runs the scanner from source.
-  - repo: https://github.com/tbhb-dev/devtools
-    rev: be961b2c1cddf2f382a1de45f10ac7c548d4e80c  # frozen: v0.20.0
-    hooks:
-      - id: commit-trailers
-      - id: commitlint
-      - id: vale-commit-msg
-      - id: cspell-commit-msg
-      - id: clear-commit-agentmsg
-      - id: guard-markdown
-        exclude: ^vendor/
-      - id: leaks-staged
-        exclude: ^vendor/
-      - id: leaks-commit-msg
-      - id: leaks-pre-push
-      - id: commit-msg-pre-push
-
+  # Lint and format, on the staged files, with the same pins and configs as
+  # the Bazel gates.
   - repo: local
     hooks:
-      - id: golangci-lint
-        exclude: ^vendor/
-        name: golangci-lint
-        entry: mise run devtools:lint-go
+      - id: gitleaks
+        name: gitleaks (staged changes)
         language: system
-        types: [go]
+        entry: .bazel_env/bin/gitleaks git --pre-commit --staged --redact --no-banner --config .gitleaks.toml
         pass_filenames: false
-
-      - id: go-fmt
-        exclude: ^vendor/
-        name: go format check
-        entry: mise run lint-go-fmt
+      # The commit message: secrets, then the Conventional Commits header.
+      # These run from install.sh's plain commit-msg hook, which chains prek's
+      # commit-msg stage after the identity check.
+      - id: gitleaks-commit-msg
+        name: gitleaks (commit message)
         language: system
-        types: [go]
-        pass_filenames: false
-
-      - id: ryl
-        exclude: ^vendor/
-        name: ryl
-        entry: mise run devtools:lint-yaml
+        entry: bash -c '.bazel_env/bin/gitleaks stdin --redact --no-banner --config .gitleaks.toml < "$1"' --
+        stages: [commit-msg]
+        always_run: true
+      - id: conventional-commits
+        name: Conventional Commits
         language: system
-        types: [yaml]
-
-      - id: tombi
-        name: tombi (TOML lint and format check)
-        entry: mise run devtools:lint-toml
-        language: system
-        types: [toml]
-        pass_filenames: false
-
-      - id: mise-fmt
-        name: mise fmt --check
-        entry: mise run devtools:lint-mise
-        language: system
-        files: ^(mise\.toml|\.config/mise/conf\.d/.*\.toml)$
-        pass_filenames: false
-
-      - id: lint-shell
-        name: shellcheck
-        entry: mise run devtools:lint-shell
-        language: system
-        files: ^.*\.sh$
-        pass_filenames: false
-
-      - id: lint-shell-fmt
+        entry: .bazel_env/bin/cog verify --file
+        stages: [commit-msg]
+        always_run: true
+      - id: shfmt
         name: shfmt
-        entry: mise run devtools:lint-shell-fmt
         language: system
-        files: ^.*\.sh$
-        pass_filenames: false
-
-      - id: lint-prose
-        exclude: ^vendor/
-        name: vale (prose)
-        entry: mise run lint-prose
+        entry: .bazel_env/bin/shfmt -w
+        types_or: [shell, bats]
+      - id: shellcheck
+        name: shellcheck
         language: system
-        types_or: [markdown, go]
-
-      - id: cspell
-        exclude: ^vendor/
-        name: cspell
-        entry: mise run devtools:lint-spelling
+        entry: .bazel_env/bin/shellcheck -o check-extra-masked-returns
+        types_or: [shell, bats]
+      - id: buildifier
+        name: buildifier
         language: system
-        pass_filenames: false
-
+        entry: .bazel_env/bin/buildifier -mode=fix -lint=warn -warnings=all
+        types: [bazel]
+      - id: tombi-format
+        name: tombi format
+        language: system
+        entry: .bazel_env/bin/tombi format --offline
+        types: [toml]
+      - id: ryl
+        name: ryl
+        language: system
+        entry: .bazel_env/bin/ryl check --strict -c .ryl.toml
+        types: [yaml]
       - id: rumdl
-        exclude: ^vendor/
         name: rumdl
-        entry: mise run devtools:lint-markdown
         language: system
+        entry: .bazel_env/bin/rumdl check
         types: [markdown]
-
-      - id: biome
-        name: biome (JSON lint and format check)
-        entry: mise run devtools:lint-config
-        language: system
-        files: \.(json|jsonc|json5)$
-        pass_filenames: false
-
       - id: actionlint
         name: actionlint
-        entry: mise run devtools:lint-workflows
         language: system
+        # Its run: block checks need shellcheck, so it gets the pinned one.
+        entry: env "SHELLCHECK_OPTS=-o check-extra-masked-returns" .bazel_env/bin/actionlint
+        args: [-shellcheck, .bazel_env/bin/shellcheck]
         files: ^\.github/workflows/
-        pass_filenames: false
-
-      # The vendir drift gate: resync and fail on any difference against
-      # what git holds.
-      - id: check-vendored
-        name: vendir drift check
-        entry: mise run devtools:check-vendored
-        language: system
-        files: ^(vendir\.(yml|lock\.yml)$|\.config/mise/conf\.d/|\.devtools/)
-        pass_filenames: false
-
-      - id: check-pins
-        name: devtools pin agreement
-        entry: mise run devtools:check-pins
-        language: system
-        files: ^(apm\.yml|vendir\.yml|\.pre-commit-config\.yaml|\.github/renovate\.json5|\.github/workflows/.*)$
-        pass_filenames: false
-
-      # Whitespace and indentation against .editorconfig. The task walks the
-      # tracked tree itself, so the hook fires on any text file but passes no
-      # filenames.
       - id: editorconfig-checker
         name: editorconfig-checker
-        entry: mise run lint-editorconfig
         language: system
-        types: [text]
-        pass_filenames: false
+        entry: .bazel_env/bin/editorconfig-checker -config .editorconfig-checker.json
 
-      - id: vendor-check
-        name: go mod tidy and vendor drift check
-        entry: mise run vendor-check
+  # Interim agent identity (replaced by `ascm git-hook` at M1). The module
+  # needs Python 3.15, and the python3 on PATH may be older, so it runs
+  # through uv. Only stamp-docs runs under prek: tools/interim/install.sh
+  # installs the trailer, check and consume hooks (prepare-commit-msg,
+  # commit-msg, post-commit) as plain git hooks, because prek stashes unstaged
+  # changes around every stage and fails a hook when the work tree changes
+  # while it runs, which a concurrent agent's edit does.
+  #
+  # stamp-docs rewrites the staged blob and the work-tree file together, so
+  # prek's modified-files check passes. With unstaged edits next to the
+  # inserted `generated:` block the work-tree rewrite can conflict: `git add`
+  # the whole file or stash first.
+  - repo: local
+    hooks:
+      - id: agent-identity-stamp-docs
+        name: agent identity stamp docs
         language: system
-        files: ^(go\.(mod|sum)|vendor/)
-        pass_filenames: false
-
-      # gomodscan scans its own vendored modules from source. The hook blocks
-      # on findings and on scanner or build failures. Lookup errors only fail
-      # the scan once the scanner exits 2 for unevaluated modules.
-      - id: scan
-        name: gomodscan (self-scan from source)
-        entry: mise run scan
-        language: system
-        files: ^(go\.(mod|sum)|vendor/)
+        entry: uv run --no-project --quiet --python ">=3.15" python tools/interim/agent_identity.py stamp-docs
+        stages: [pre-commit]
+        types: [markdown]
         pass_filenames: false

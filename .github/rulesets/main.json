@@ -5,21 +5,12 @@
   "conditions": {
     "ref_name": {
       "exclude": [],
-      "include": ["~DEFAULT_BRANCH"]
+      "include": [
+        "~DEFAULT_BRANCH"
+      ]
     }
   },
-  "bypass_actors": [
-    {
-      "actor_id": null,
-      "actor_type": "OrganizationAdmin",
-      "bypass_mode": "always"
-    },
-    {
-      "actor_id": 5264564,
-      "actor_type": "Integration",
-      "bypass_mode": "always"
-    }
-  ],
+  "bypass_actors": [],
   "rules": [
     {
       "type": "deletion"
@@ -47,7 +38,9 @@
         "require_last_push_approval": true,
         "required_review_thread_resolution": true,
         "require_extra_approval_for_unattributed_changes": true,
-        "allowed_merge_methods": ["squash"]
+        "allowed_merge_methods": [
+          "squash"
+        ]
       }
     },
     {
@@ -57,43 +50,7 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "lint",
-            "integration_id": 15368
-          },
-          {
-            "context": "test",
-            "integration_id": 15368
-          },
-          {
-            "context": "coverage",
-            "integration_id": 15368
-          },
-          {
-            "context": "cover-go-check",
-            "integration_id": 15368
-          },
-          {
-            "context": "vuln",
-            "integration_id": 15368
-          },
-          {
-            "context": "vendor-check",
-            "integration_id": 15368
-          },
-          {
-            "context": "gitleaks",
-            "integration_id": 15368
-          },
-          {
-            "context": "govulncheck / govulncheck",
-            "integration_id": 15368
-          },
-          {
-            "context": "gomodscan",
-            "integration_id": 15368
-          },
-          {
-            "context": "lint-codeowners / lint-codeowners",
+            "context": "conclusion",
             "integration_id": 15368
           }
         ]

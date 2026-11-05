@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+The Go module path moved from `github.com/tbhb-dev/gomodscan` to `go.tbhb.dev/gomodscan`. The old path isn't deprecated. Releases up to v0.1.0 declare it.
+
 - - -
 <!-- release -->
 

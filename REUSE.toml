@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+version = 1
+
+# Everything is Apache-2.0, so LICENSES/ holds one license text. Files that
+# take a comment carry a two-line header in the file itself. The annotations
+# below cover files that cannot hold a comment or that tools generate or
+# rewrite, and files where a header would be noise. CC0-1.0 would be the
+# usual choice for trivial config, but a single license keeps the policy
+# simple and the config here is not trivial enough to give up the copyright
+# notice.
+
+# Lockfiles, checksums and other generated files.
+[[annotations]]
+path = [
+  "go.mod",
+  "go.sum",
+  "mise.lock",
+  "MODULE.bazel.lock",
+  "uv.lock",
+  ".mise/locks/**",
+]
+SPDX-FileCopyrightText = "Tony Burns"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Version pins and ignore lists that hold one value per line, so tools read
+# every line and a comment would break them.
+[[annotations]]
+path = [
+  ".bazelversion",
+  ".python-version",
+  ".bazelignore",
+  ".rylignore",
+  ".cspell-words.txt",
+  ".vale/config/vocabularies/project/*.txt",
+]
+SPDX-FileCopyrightText = "Tony Burns"
+SPDX-License-Identifier = "Apache-2.0"
+
+# JSON cannot hold comments, and test data is fixture content that a header
+# would change.
+[[annotations]]
+path = [
+  "**/*.json",
+  "**/testdata/**",
+]
+SPDX-FileCopyrightText = "Tony Burns"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Dotfiles and docs that can take a comment but where GitHub or the
+# toolchain expects the file to start with its own content. CODEOWNERS and
+# README.md render on GitHub, and LICENSE is the verbatim license text that
+# GitHub's license detection reads, so it must not gain a header.
+[[annotations]]
+path = [
+  "LICENSE",
+  "README.md",
+  ".github/CODEOWNERS",
+  # A header comment here would land in every PR body.
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  ".gitattributes",
+  ".gitignore",
+  ".editorconfig",
+  ".cspell.jsonc",
+  ".bazelrc",
+  "preset.bazelrc",
+]
+SPDX-FileCopyrightText = "Tony Burns"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Markdown that can't carry a header comment: OKF docs must open with their
+# frontmatter, and agent instruction files are read verbatim by the harnesses.
+[[annotations]]
+path = ["docs/**/*.md", "**/AGENTS.md", "**/CLAUDE.md"]
+SPDX-FileCopyrightText = "Tony Burns"
+SPDX-License-Identifier = "Apache-2.0"
+
+# CHANGELOG.md is written by cog, and the changelog template is cog's input.
+# A header in either would land in the generated changelog.
+[[annotations]]
+path = ["CHANGELOG.md", ".cog/changelog.tera"]
+SPDX-FileCopyrightText = "Tony Burns"
+SPDX-License-Identifier = "Apache-2.0"

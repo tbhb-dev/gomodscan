@@ -1,2 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+# Review edits to this file as security policy. Start from gitleaks' default
+# rules and allowlist only what is justified, each with a reason.
 [extend]
 useDefault = true
+
+# `gitleaks dir` walks the working directory without reading .gitignore, so
+# the build output and tool caches that a local checkout holds would be
+# scanned too. None of them is authored content, and none is tracked by git,
+# so the history scan never sees them either.
+[[allowlists]]
+description = "Untracked build output, tool caches, and scratch space"
+paths = [
+  '''^\.venv/''',
+  '''^bazel-[^/]+/''',
+  '''^\.bazel-[^/]+/''',
+  '''^\.mise/''',
+  '''^\.vale/(Google|write-good|proselint|ai-tells[^/]*)/''',
+  '''^tmp/''',
+  '''^\.worktrees/''',
+  '''(^|/)__pycache__/''',
+  '''^\.(ruff|pytest|hypothesis|rumdl)_cache/''',
+]

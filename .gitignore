@@ -1,50 +1,32 @@
-# Local development
 tmp/
-.env
-.env.*
-!.env.example
-mise.local.toml
-
-# Agent drafts. Authored at the repo root so vale's [formats] mapping
-# resolves them, linted via `mise run lint-commit-msg` and its siblings,
-# then consumed by the commit and pull request skills. Never committed.
-COMMIT_AGENTMSG
-PR_AGENTDESC.md
-SQUASH_AGENTMSG
-.fix-prose/
-
-# Go build output
+.worktrees/
 bin/
-/gomodscan
-coverage.out
-coverage.html
-coverage.txt
-coverage.xml
-coverage.covdata*/
-
-# Test outputs
-testdata/fuzz/
-
-# Linter caches
-.rumdl_cache/
-node_modules/
-.cspell-cache
-__pycache__/
-
-# goreleaser
 dist/
-
-# gremlins
-.gremlins/
-gremlins-report.json
-
-# Claude Code
-.claude/worktrees/
+bazel-*
+.bazel-*
+.bazelrc.user
+# bazel_env's symlink into the output tree (bazel run //:bazel_env).
+.bazel_env
+coverage.*
+mise.local.toml
+.env*
+.DS_Store
+# Obsidian vault settings, from opening the repository as a vault.
+.obsidian/
 .claude/settings.local.json
+.claude/worktrees/
 
-# Vale synced packages (keep the vocabulary).
-# Each negation needs the parent un-ignored first — git can't re-include
-# a child whose ancestor directory stays excluded.
+# Python tooling
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+.coverage*
+coverage.xml
+.hypothesis/
+
+# vale sync writes the synced style packages and templates under .vale/;
+# only the project's own style and vocabulary are tracked.
 .vale/*
 !.vale/project/
 !.vale/config/
@@ -53,8 +35,16 @@ gremlins-report.json
 .vale/config/vocabularies/*
 !.vale/config/vocabularies/project/
 
-# macOS
-.DS_Store
+# mutation_changes: the changes file for diff-scope mutation runs
+.mutation/
 
-# APM dependencies
-apm_modules/
+# Linter caches
+.rumdl_cache/
+.cspell/
+
+# Agents draft PRs here; the PR script lints it and opens the PR from it.
+.github/PULL_REQUEST_DRAFT.md
+
+# Tracked here although global ignores often skip it: the pinned awrel MCP
+# server this repository runs in its own sessions.
+!.mcp.json

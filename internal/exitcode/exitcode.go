@@ -18,12 +18,12 @@ const (
 	// to review the output before proceeding.
 	Findings = 1
 
-	// ToolFailure signals that the tool couldn't finish the job: an
-	// input it scans couldn't be evaluated even after retries, or the
-	// run failed outright (bad arguments, a parse error, missing
-	// inputs, a failed output write). It takes precedence over Findings,
-	// so a run that reported findings but left an input unevaluated still
-	// exits ToolFailure, since its findings list may be incomplete.
+	// ToolFailure signals an incomplete run. Either some input remained
+	// unevaluated after the retries, or the run itself failed through bad
+	// arguments, a parse error, missing inputs, or a failed output write.
+	// It takes precedence over Findings. A run that reported findings but
+	// left an input unevaluated still exits ToolFailure, since its
+	// findings list may be incomplete.
 	// Callers should retry or escalate.
 	ToolFailure = 2
 )

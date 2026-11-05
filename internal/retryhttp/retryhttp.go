@@ -26,9 +26,9 @@ import (
 const (
 	// MaxRetries bounds how many times the transport re-issues a request
 	// after a retryable response (429 or most 5xx) or a transient network
-	// error. A request gets MaxRetries+1 attempts in all. Three retries
-	// back off about 1 s, 2 s, then 4 s, which rides out a short upstream
-	// blip while holding the worst-case per-request wait down when an
+	// error. A request gets MaxRetries+1 attempts in all. The default
+	// three retries back off about 1 s, 2 s, then 4 s, which rides out a
+	// short upstream blip while holding the worst-case per-request wait down when an
 	// upstream throttles the whole host.
 	MaxRetries = 3
 
@@ -80,6 +80,7 @@ func NewTransport(
 		Build()
 	//nolint:bodyclose // same generics issue as the retry policy, with nothing to close.
 	attemptDeadline := timeout.New[*http.Response](attemptTimeout)
+
 	return failsafehttp.NewRoundTripper(countingTransport{inner: inner}, retryPolicy, attemptDeadline)
 }
 
@@ -93,6 +94,7 @@ type attemptsKey struct{}
 // back a failure, so the error it returns can say how hard the run tried.
 func WithAttempts(ctx context.Context) (context.Context, func() int) {
 	var n atomic.Int32
+
 	return context.WithValue(ctx, attemptsKey{}, &n), func() int { return int(n.Load()) }
 }
 
@@ -125,6 +127,7 @@ func (e *Error) Error() string {
 	if e.LastStatus == 0 {
 		return fmt.Sprintf("%v (attempts: %d, last status: 0, no HTTP response)", e.Err, e.Attempts)
 	}
+
 	return fmt.Sprintf("%v (attempts: %d, last status: %d)", e.Err, e.Attempts, e.LastStatus)
 }
 

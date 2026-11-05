@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "awrel": {
+      "command": "go",
+      "args": ["run", "go.tbhb.dev/awrel/cmd/awrel@v0.1.0", "mcp"],
+      "env": {
+        "AWREL_ENDPOINT": "wss://awrel.tbhb.dev/connect",
+        "AWREL_CONNECT_TOKEN_FILE": "${HOME}/.config/awrel/prd-connect-token"
+      }
+    }
+  }
+}

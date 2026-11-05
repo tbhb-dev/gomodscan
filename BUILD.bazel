@@ -1,0 +1,504 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+load("@bazel_env.bzl", "bazel_env")
+load("@bazelrc-preset.bzl", "bazelrc_preset")
+load("@buildifier_prebuilt//:rules.bzl", "buildifier", "buildifier_test")
+load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "nogo")
+load("@tbhb_rules//format:defs.bzl", "format", "format_test")
+load(
+    "@tbhb_rules//lint:defs.bzl",
+    "actionlint_test",
+    "bats_test",
+    "codeowners_test",
+    "cspell_test",
+    "editorconfig_checker_test",
+    "gitleaks_history",
+    "gitleaks_test",
+    "okf_docs_test",
+    "reuse_test",
+    "rumdl_test",
+    "ryl_test",
+    "shellcheck_test",
+    "shfmt_test",
+    "tombi_test",
+    "vale_sync",
+    "vale_test",
+    "zizmor_test",
+)
+load("@tbhb_rules//repo:defs.bzl", "repo_files")
+load("@tbhb_rules_go//:defs.bzl", "go_arch_lint_test", "go_deadcode_test", "go_mod_tidy_test", "gobco_test", "gomutants_test", "govulncheck", "govulncheck_test")
+load("//:vale_packages.bzl", "VALE_PACKAGES")
+load("//tools/lint:linters.bzl", "golangci_lint_test")
+
+# gazelle:prefix go.tbhb.dev/gomodscan
+
+exports_files([
+    ".golangci.yml",
+    "go.mod",
+])
+
+gazelle(name = "gazelle")
+
+# Generates preset.bazelrc, which .bazelrc imports. The content depends on the
+# Bazel version that runs the generator; the committed copy matches
+# .bazelversion, and `preset.update_test` fails when it is stale.
+bazelrc_preset(
+    name = "preset",
+)
+
+# buildifier: `//:buildifier` formats and applies lint fixes in place,
+# `//:buildifier.check` fails on any formatting or lint difference, and the
+# test below makes `bazel test //...` fail on the same findings. Every
+# available warning is on. `bazel-*` convenience symlinks, the Python and
+# tool caches and scratch space hold no Starlark that this
+# repository owns.
+BUILDIFIER_EXCLUDES = [
+    "./.git/*",
+    "./.venv/*",
+    "./.mise/*",
+    "./bazel-*",
+    "./.bazel-*",
+    "./node_modules/*",
+    "./tmp/*",
+]
+
+buildifier(
+    name = "buildifier",
+    exclude_patterns = BUILDIFIER_EXCLUDES,
+    lint_mode = "fix",
+    lint_warnings = ["all"],
+    mode = "fix",
+)
+
+buildifier(
+    name = "buildifier.check",
+    exclude_patterns = BUILDIFIER_EXCLUDES,
+    lint_mode = "warn",
+    lint_warnings = ["all"],
+    mode = "diff",
+)
+
+buildifier_test(
+    name = "buildifier_test",
+    exclude_patterns = BUILDIFIER_EXCLUDES,
+    lint_mode = "warn",
+    lint_warnings = ["all"],
+    no_sandbox = True,
+    workspace = "//:MODULE.bazel",
+)
+
+# The vet subset that is accurate enough to fail a build: atomic, bools,
+# buildtag, nilfunc, and printf.
+nogo(
+    name = "nogo",
+    vet = True,
+    visibility = ["//visibility:public"],
+)
+
+# The Go checks, over every binary, library and test of the module.
+# golangci-lint runs per package as an aspect, over export data, and fails if
+# any Go file of the tree is never linted. deadcode takes every binary at once,
+# so a function only one binary calls is live. go-arch-lint holds the import
+# contracts in .go-arch-lint.yml, and go mod tidy checks go.mod and go.sum
+# offline against the module proxy.
+GO_TARGETS = [
+    "//cmd/gomodscan",
+    "//cmd/gomodscan:gomodscan_test",
+    "//internal/buildmeta:buildmeta_test",
+    "//internal/cachehttp:cachehttp_test",
+    "//internal/exitcode",
+    "//internal/findings:findings_test",
+    "//internal/osv:osv_test",
+    "//internal/pkgsite:pkgsite_test",
+    "//internal/retryhttp:retryhttp_test",
+    "//internal/vendormod:vendormod_test",
+]
+
+# The tests of every package that has any, for mutation testing.
+GO_TESTS = [target for target in GO_TARGETS if target.endswith("_test")]
+
+golangci_lint_test(
+    name = "golangci_lint_test",
+    srcs = GO_TARGETS,
+    expect_linted = [":repo_files"],
+)
+
+go_deadcode_test(
+    name = "go_deadcode_test",
+    srcs = GO_TARGETS,
+)
+
+go_arch_lint_test(
+    name = "go_arch_lint_test",
+    srcs = GO_TARGETS,
+    config = ".go-arch-lint.yml",
+    go_mod = "go.mod",
+)
+
+go_mod_tidy_test(
+    name = "go_mod_tidy_test",
+    srcs = [":repo_files"],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+)
+
+# Reachable vulnerabilities. Advisories change without any input changing, so
+# the rule tags the test manual, external and requires-network: it is not part
+# of //... and never cached. CI runs the `govulncheck` companion below, which
+# writes a SARIF report as an artifact.
+govulncheck_test(
+    name = "govulncheck_test",
+    srcs = GO_TARGETS,
+    data = [
+        "//cmd/gomodscan:testdata",
+        "//internal/findings:testdata",
+        "//internal/vendormod:testdata",
+    ],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+)
+
+# The same scan as a `bazel run` target, outside the test sandbox, which the
+# shared repository checks in CI run.
+govulncheck(
+    name = "govulncheck",
+    srcs = GO_TARGETS,
+    data = [
+        "//cmd/gomodscan:testdata",
+        "//internal/findings:testdata",
+        "//internal/vendormod:testdata",
+    ],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+)
+
+# Mutation testing: every mutant gomutants makes of a package must be killed
+# by that package's tests. One cached run per package; by default every
+# package runs in full. For a diff-scope run, write the changes since a base
+# and point the flag at them:
+#
+#   bazel run @tbhb_rules//quality:mutation_changes -- --base origin/main --out .mutation/changes.json
+#   bazel test --@tbhb_rules//quality:changes=//:mutation_changes //:gomutants_test
+gomutants_test(
+    name = "gomutants_test",
+    cpus = 2,
+    data = [
+        "//cmd/gomodscan:testdata",
+        "//internal/findings:testdata",
+        "//internal/vendormod:testdata",
+    ],
+    flags = [
+        # On the CI runners some osv and pkgsite mutants ran past the default
+        # ceiling, which scales one baseline run per package, before a test
+        # failed. A floor keeps runner load from reading as a timeout, and
+        # -failfast ends the run at the first failing test. awrel sets both.
+        "--timeout-min=20s",
+        "--test-flags=-failfast",
+    ],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    # Windows doesn't enforce Unix mode bits, so a mutated file permission
+    # can't be told apart there. No package has Windows-only code, so
+    # mutation testing runs on Linux and macOS only.
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tests = GO_TESTS,
+)
+
+# Every outcome of every condition in each Go package, one target per
+# package so a change reruns only the packages it touches. internal/exitcode
+# holds constants and has no tests.
+gobco_test(
+    name = "gomodscan_gobco_test",
+    data = ["//cmd/gomodscan:testdata"],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//cmd/gomodscan:gomodscan_test"],
+)
+
+gobco_test(
+    name = "buildmeta_gobco_test",
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//internal/buildmeta:buildmeta_test"],
+)
+
+gobco_test(
+    name = "cachehttp_gobco_test",
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//internal/cachehttp:cachehttp_test"],
+)
+
+gobco_test(
+    name = "findings_gobco_test",
+    data = ["//internal/findings:testdata"],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//internal/findings:findings_test"],
+)
+
+gobco_test(
+    name = "osv_gobco_test",
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//internal/osv:osv_test"],
+)
+
+gobco_test(
+    name = "pkgsite_gobco_test",
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//internal/pkgsite:pkgsite_test"],
+)
+
+gobco_test(
+    name = "retryhttp_gobco_test",
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//internal/retryhttp:retryhttp_test"],
+)
+
+gobco_test(
+    name = "vendormod_gobco_test",
+    data = ["//internal/vendormod:testdata"],
+    go_mod = "go.mod",
+    go_sum = "go.sum",
+    proxy = "@go_mod_proxy//:proxy",
+    tests = ["//internal/vendormod:vendormod_test"],
+)
+
+# The changes file for a diff-scope mutation run: empty, so full scope,
+# unless mutation_changes has written one.
+filegroup(
+    name = "mutation_changes",
+    # buildifier: disable=constant-glob
+    srcs = glob(
+        [".mutation/changes.json"],
+        allow_empty = True,
+    ),
+)
+
+# Every file of the repository, for the whole-tree checks below. Each package
+# calls repo_files() too, so the chain covers the tree. Directories that hold
+# no source are ignored in REPO.bazel; these are the gitignored loose files
+# that can sit in a working checkout.
+repo_files(
+    exclude = [
+        "**/.DS_Store",
+        ".bazelrc.user",
+        ".coverage*",
+        ".env*",
+        ".mutation/**",
+        ".claude/settings.local.json",
+        ".github/PULL_REQUEST_DRAFT.md",
+        "coverage.*",
+        "mise.local.toml",
+        # Synced Vale packages: only the project's own style is tracked.
+        ".vale/Google/**",
+        ".vale/write-good/**",
+        ".vale/proselint/**",
+        ".vale/ai-tells/**",
+        ".vale/ai-tells-experimental/**",
+        ".vale/config/scripts/**",
+        ".vale/config/templates/**",
+    ],
+)
+
+# Whole-tree gates over //:repo_files, from tbhb_rules. Each test runs its
+# tool over a dereferenced copy of the tree, so it is hermetic and cached,
+# and fails when it scanned nothing.
+gitleaks_test(
+    name = "gitleaks_test",
+    srcs = [":repo_files"],
+    config = ".gitleaks.toml",
+)
+
+# `bazel run //:gitleaks_history` scans every commit. History is not a
+# declared input, so it cannot be a cached test; CI runs it.
+gitleaks_history(
+    name = "gitleaks_history",
+    config = ".gitleaks.toml",
+)
+
+ryl_test(
+    name = "ryl_test",
+    srcs = [":repo_files"],
+    config = ".ryl.toml",
+    data = [".rylignore"],
+)
+
+# pyproject.toml's embedded schema refers to these by URL; tombi runs
+# offline, so it reads the pinned copies from MODULE.bazel.
+tombi_test(
+    name = "tombi_test",
+    srcs = [":repo_files"],
+    config = "tombi.toml",
+    schemas = {
+        "https://www.schemastore.org/uv.json": "@schemastore_uv//file",
+    },
+)
+
+rumdl_test(
+    name = "rumdl_test",
+    srcs = [":repo_files"],
+    config = ".rumdl.toml",
+)
+
+editorconfig_checker_test(
+    name = "editorconfig_checker_test",
+    srcs = [":repo_files"],
+    config = ".editorconfig-checker.json",
+)
+
+actionlint_test(
+    name = "actionlint_test",
+    srcs = [":repo_files"],
+)
+
+# Offline audits. The online ones need a token and the network; CI runs
+# them outside the test graph.
+zizmor_test(
+    name = "zizmor_test",
+    srcs = [":repo_files"],
+    config = ".github/zizmor.yml",
+)
+
+# Shell scripts, found by extension and shebang.
+shellcheck_test(
+    name = "shellcheck_test",
+    srcs = [":repo_files"],
+)
+
+# shfmt reads its style from .editorconfig.
+shfmt_test(
+    name = "shfmt_test",
+    srcs = [":repo_files"],
+)
+
+bats_test(
+    name = "bats_test",
+    srcs = [":repo_files"],
+    tests = ["tools/get_workspace_status.bats"],
+)
+
+# Every CODEOWNERS pattern still matches a file. GitHub's owner and syntax
+# validation needs its API, so CI runs that outside the test graph.
+codeowners_test(
+    name = "codeowners_test",
+    srcs = [":repo_files"],
+)
+
+# docs/ as an OKF v0.2 bundle, and every Markdown file's frontmatter, against
+# the schemas in docs/schemas.
+okf_docs_test(
+    name = "okf_docs_test",
+    srcs = [":repo_files"],
+)
+
+# Copyright and licensing information on every file (REUSE.toml, LICENSES/).
+reuse_test(
+    name = "reuse_test",
+    srcs = [":repo_files"],
+)
+
+cspell_test(
+    name = "cspell_test",
+    srcs = [":repo_files"],
+    config = ".cspell.jsonc",
+    data = [".cspell-words.txt"],
+)
+
+# Vale style packages, in .vale.ini's `Packages` order.
+# Markdown and Go comments, against the pinned packages, offline.
+vale_test(
+    name = "vale_test",
+    srcs = [":repo_files"],
+    include = [
+        "*.md",
+        "*.go",
+    ],
+    config = ".vale.ini",
+    packages = VALE_PACKAGES,
+)
+
+# `bazel run //:vale_sync` writes the same packages into .vale/, for editors
+# and for running vale by hand.
+vale_sync(
+    name = "vale_sync",
+    config = ".vale.ini",
+    packages = VALE_PACKAGES,
+)
+
+# Formatters. `bazel run //:format` rewrites the workspace in place,
+# `bazel run //:format.check` only reports, and //:format_test makes
+# `bazel test //...` fail on any unformatted file.
+FORMATTERS = [
+    "@tbhb_rules//format:buildifier",
+    "@tbhb_rules//format:rumdl",
+    "@tbhb_rules//format:ryl",
+    "@tbhb_rules//format:shfmt",
+    "@tbhb_rules//format:tombi",
+    "@tbhb_rules_go//:golangci_fmt",
+]
+
+format(
+    name = "format",
+    formatters = FORMATTERS,
+)
+
+format_test(
+    name = "format_test",
+    srcs = [":repo_files"],
+    formatters = FORMATTERS,
+)
+
+# `bazel run //:bazel_env` puts shims for the Bazel-pinned tools in
+# .bazel_env/bin, which mise and direnv add to PATH. Git hooks call them
+# directly, so a commit never waits on the Bazel server. bazel_env.bzl builds
+# its bin directory with POSIX tools that fail under Windows' Bash, so the
+# shims are for macOS and Linux.
+bazel_env(
+    name = "bazel_env",
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    toolchains = {
+        "go": "@rules_go//go:toolchain",
+    },
+    tools = {
+        "actionlint": "@tbhb_rules_actionlint//:actionlint",
+        "buildifier": "@buildifier_prebuilt//:buildifier",
+        "cog": "@tbhb_rules_cog//:cog",
+        "cspell": "@tbhb_rules//lint/private/cspell",
+        "editorconfig-checker": "@tbhb_rules_editorconfig_checker//:editorconfig-checker",
+        "git": "@tbhb_rules_git//:git",
+        "gitleaks": "@tbhb_rules_gitleaks//:gitleaks",
+        "go": "@rules_go//go",
+        "python": "//tools:python",
+        "rumdl": "@tbhb_rules_rumdl//:rumdl",
+        "ryl": "@tbhb_rules_ryl//:ryl",
+        "shellcheck": "@tbhb_rules_shellcheck//:shellcheck",
+        "shfmt": "@tbhb_rules_shfmt//:shfmt",
+        "tombi": "@tbhb_rules_tombi//:tombi",
+        "uv": "//tools:uv",
+        "vale": "@tbhb_rules_vale//:vale",
+        "zizmor": "@tbhb_rules_zizmor//:zizmor",
+    },
+)

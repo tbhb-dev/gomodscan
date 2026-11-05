@@ -1,22 +1,13 @@
----
-# Main quality gate. Runs the full lint set, the test suite
-# (matrixed across linux/macOS/windows native runners with the race
-# detector enabled in every slot), the coverage thresholds, govulncheck,
-# and the vendor-drift check on every pull request and every push to
-# `main`. Each gate runs as its own job so a flake in one block does not
-# require rerunning the others and the PR status surfaces which gate
-# fired.
-# Each matrix slot also uploads its own coverage report to GitHub's
-# code coverage API, and a downstream `coverage` job merges the slots
-# into one combined report.
-#
-# The toolchain comes from a SHA-pinned jdx/mise-action reading
-# mise.toml, the conf.d drop-ins, and the committed lockfiles, so every
-# job runs the pinned binaries. Each job then invokes the matching mise
-# task so the task stays the single source of truth for
-# what the gate runs. The local `check` and `check-all` aggregators stay
-# in lockstep with this workflow.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
 
+---
+# Main quality gate. Bazel pins every tool and owns every gate: the
+# hermetic checks are cached `bazel test` targets, so `bazel test //...`
+# runs them all, and the few that need the network, Git history or the
+# GitHub API run in the shared `repo` job. The shared setup, repository
+# checks and conclusion logic come from tbhb-dev/rules. A final `conclusion`
+# job gives branch protection one stable required check.
 name: ci
 
 on:
@@ -27,282 +18,152 @@ on:
 permissions:
   contents: read
 
-# A lockfile only binds a version it has already seen: moving a pin in
-# mise.toml while leaving mise.lock alone would make mise fetch the new
-# version and rewrite the lockfile in place, so a Renovate PR could pass
-# while the committed digests drifted from the pins under review.
-# MISE_LOCKED makes that a hard failure instead.
-env:
-  MISE_LOCKED: "1"
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Invokes only the `lint` aggregator task, so the job stays unchanged
-  # as new gates come in — each gate appends itself to the aggregator
-  # instead. The full toolchain installs from the lockfiles, go
-  # included. The conf.d go pin is newer than go.mod's toolchain
-  # directive, so Go runs the pinned toolchain rather than fetching one.
-  lint:
-    name: lint
-    runs-on: ubuntu-24.04
+  # Bazel 9.x only, the version .bazelversion pins, on Linux (x86_64 and
+  # arm64), macOS (arm64) and Windows (x86_64). The checks that need the
+  # network or GitHub's API run on Linux only; they do not depend on the OS.
+  bazel:
+    name: "bazel (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, ubuntu-26.04-arm, macos-26, windows-2025]
+        include:
+          - os: ubuntu-26.04
+            release: release
+          - os: ubuntu-26.04-arm
+            release: release
+          - os: macos-26
+            release: release
+          # Bazel runs the workspace status command without a shell on
+          # Windows, so the release config there uses the batch script.
+          - os: windows-2025
+            release: release-windows
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
-      # Full history: the leak scan below reads every commit a pull
-      # request adds, and a shallow clone is refused as incomplete.
+      # Full history: the release build stamps the version through
+      # `git describe`.
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      # Hardens the runner, sets up Bazel and fetches, with the platform
+      # workarounds, from tbhb-dev/rules.
+      - name: Set up Bazel for CI
+        uses: tbhb-dev/rules/.github/actions/setup-bazel-ci@431be578eed96a29d2467b9652feb5ac5c361ee6  # main
         with:
-          # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.15
+          disk-cache: ${{ github.workflow }}-${{ matrix.os }}
+          cache-save: ${{ github.event_name != 'pull_request' }}
 
-      # mise installs the vale binary but does not fetch the style
-      # packages .vale.ini declares.
-      - name: Sync Vale styles
-        run: mise run install-tools
+      # //... is every hermetic gate: the whole-tree lint tests (secrets in
+      # the working tree, YAML, TOML, Markdown, prose, EditorConfig,
+      # workflows, shell, CODEOWNERS paths), the format check, Starlark
+      # lint, nogo during the build, the Go and Python tests and linters,
+      # condition coverage, the docs bundle and REUSE checks, the import
+      # contracts, and the preset staleness test.
+      - name: Test
+        run: bazelisk test --config=ci //...
 
-      - name: Check private identifiers in the PR range
-        if: github.event_name == 'pull_request'
+      - name: Build the release binary
         env:
-          LEAK_BASE: ${{ github.event.pull_request.base.sha }}
-          LEAK_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: mise run --quiet devtools:lint-leaks -- --range "$LEAK_BASE..$LEAK_HEAD"
+          RELEASE_CONFIG: ${{ matrix.release }}
+        run: bazelisk build "--config=${RELEASE_CONFIG}" //cmd/gomodscan
 
-      - name: Run lint gates
-        run: mise run lint
+      # A failed run's test logs, so a failure that does not recur can still
+      # be read.
+      - name: Keep the test logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: testlogs-${{ matrix.os }}
+          path: |
+            .bazel-testlogs/**/test.log
+            .bazel-testlogs/**/test.xml
+          # The convenience links are dotfiles, which the action skips by default.
+          include-hidden-files: true
+          if-no-files-found: ignore
 
-  test-matrix:
-    name: "test (${{ matrix.os }})"
-    runs-on: ${{ matrix.os }}
-    # Each slot publishes its own coverage report to GitHub's code
-    # coverage API, which needs code-quality: write on top of the read
-    # scopes (contents for checkout, pull-requests so the upload action
-    # can resolve the PR number on push events). Job-level permissions
-    # replace the workflow default, so the reads are listed explicitly.
+  # The repository-level checks, in the shared workflow, on Linux beside the
+  # bazel matrix so they don't wait behind the tests: gazelle, MODULE.bazel
+  # tidiness, the history scan, the Python audit, govulncheck (the `bazel run`
+  # target, whose SARIF is kept as an artifact), zizmor online and CODEOWNERS.
+  repo:
+    name: repo
     permissions:
       contents: read
-      code-quality: write
-      pull-requests: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - macos-15
-          - windows-2025
-    steps:
-      - name: Harden the runner
-        if: runner.os == 'Linux'
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
+    uses: tbhb-dev/rules/.github/workflows/repo-checks.yml@431be578eed96a29d2467b9652feb5ac5c361ee6  # main
+    with:
+      gazelle-dirs: .
+      govulncheck-target: //:govulncheck
+      module-dirs: .
 
+  # gomodscan scans its own vendored modules, built from source so the scan
+  # exercises the code under review. The repository does not vendor, so a
+  # scratch copy of the module gets `go mod vendor` first. Exit status 1 means
+  # findings, which Code Scanning shows; any other nonzero status fails the job.
+  gomodscan:
+    name: gomodscan
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write  # upload the SARIF report to Code Scanning
+    steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
-      # mise supplies go on every slot, Windows included: a probe on
-      # windows-2025 showed it running a bash-shebang task body under
-      # Git Bash and resolving its own go pin there, which is what
-      # retired the actions/setup-go step this job used to run. The pin
-      # is locked for windows-x64, so this installs the same toolchain
-      # MISE_LOCKED enforces everywhere else.
-      #
-      # The first `mise run` in a job otherwise installs the whole
-      # configured toolchain rather than the task's own tools, which cost
-      # the probe over three minutes against roughly one of real work.
-      # Turning the auto-install off leaves install_args as the single
-      # place naming what this job needs.
-      - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - name: Set up Bazel for CI
+        uses: tbhb-dev/rules/.github/actions/setup-bazel-ci@431be578eed96a29d2467b9652feb5ac5c361ee6  # main
         with:
-          # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.15
-          install_args: go
+          targets: //cmd/gomodscan @rules_go//go
 
-      - name: Run tests with coverage
-        env:
-          MISE_TASK_RUN_AUTO_INSTALL: "0"
-        run: mise run cover-go-binary
-
-      - name: Run tests with race detector
-        env:
-          MISE_TASK_RUN_AUTO_INSTALL: "0"
-        run: mise run test-go-race
-
-      # Publish this slot's report under a per-OS label so each platform
-      # shows on its own, and stash the binary coverage data for the
-      # coverage job to merge into the combined report.
-      - name: Upload ${{ matrix.os }} coverage report
-        uses: actions/upload-code-coverage@2b21a77928be8d5168c2b9581a67f2adbebacc52 # v1.4.4
-        with:
-          file: coverage.xml
-          language: Go
-          label: code-coverage/${{ matrix.os }}
-          fail-on-error: false
-
-      - name: Upload ${{ matrix.os }} coverage data
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: covdata-${{ matrix.os }}
-          path: coverage.covdata
-          if-no-files-found: error
-          retention-days: 1
-
-  # The matrix job reports as `test (<os>)` per slot. This job owns the
-  # plain name `test`, so the required-check list names one check and stays
-  # stable when the matrix changes. `if: always()` keeps it running after a
-  # failed slot, and anything but `success` -- failure, cancelled, or
-  # skipped -- fails it.
-  test:
-    name: test
-    if: always()
-    needs: test-matrix
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Require every matrix leg to pass
-        env:
-          RESULT: ${{ needs.test-matrix.result }}
+      - name: Vendor the module in a scratch copy
         run: |
-          if [[ "${RESULT}" != "success" ]]; then
-            echo "the test matrix finished as ${RESULT}" >&2
-            exit 1
-          fi
+          scratch="${RUNNER_TEMP}/vendored"
+          mkdir "${scratch}"
+          cp -R go.mod go.sum cmd internal "${scratch}/"
+          bazelisk run --config=ci @rules_go//go -- -C "${scratch}" mod vendor
 
-  coverage:
-    name: coverage
-    runs-on: ubuntu-24.04
-    needs: test-matrix
-    # Publishes the merged report to the code coverage API (same scopes
-    # as the per-slot uploads in the test job).
-    permissions:
-      contents: read
-      code-quality: write
-      pull-requests: read
+      - name: Run gomodscan (SARIF)
+        run: |
+          status=0
+          bazelisk run --config=ci //cmd/gomodscan -- \
+            -modroot "${RUNNER_TEMP}/vendored" \
+            -format sarif -o "${GITHUB_WORKSPACE}/gomodscan.sarif" || status=$?
+          if ((status > 1)); then exit "${status}"; fi
+
+      - name: Upload the gomodscan SARIF
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
+        with:
+          sarif_file: gomodscan.sarif
+          category: gomodscan
+
+  # One stable required check for branch protection. `if: always()` runs it
+  # even when a needed job failed. It passes only when every needed job's
+  # result is exactly "success", so a gate that was skipped, cancelled or
+  # never finished cannot pass. A matrix with a cancelled leg reports
+  # "abandoned", not "cancelled", so the check lists what passes, not what
+  # fails.
+  conclusion:
+    name: conclusion
+    if: always()
+    needs: [bazel, repo, gomodscan]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
     steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+      - name: Fail if any needed job did not succeed
+        uses: tbhb-dev/rules/.github/actions/ci-conclusion@431be578eed96a29d2467b9652feb5ac5c361ee6  # main
         with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.15
-          install_args: go
-
-      - name: Download per-slot coverage data
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          path: coverage.covdata.slots
-          pattern: covdata-*
-
-      - name: Merge coverage and render the combined report
-        env:
-          MISE_TASK_RUN_AUTO_INSTALL: "0"
-        run: mise run cover-go-merge
-
-      - name: Upload combined coverage report
-        uses: actions/upload-code-coverage@2b21a77928be8d5168c2b9581a67f2adbebacc52 # v1.4.4
-        with:
-          file: coverage.xml
-          language: Go
-          label: code-coverage/combined
-          fail-on-error: false
-
-  # Enforces the .testcoverage.yml thresholds, which the per-slot
-  # cover-go-binary runs above only measure. The floors were measured on
-  # Linux.
-  cover-go-check:
-    name: cover-go-check
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.15
-          install_args: go
-
-      - name: Measure Go coverage and enforce the thresholds
-        env:
-          MISE_TASK_RUN_AUTO_INSTALL: "0"
-        run: mise run cover-go
-
-  vuln:
-    name: vuln
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.15
-          install_args: go
-
-      - name: Run govulncheck
-        run: mise run vuln
-
-  vendor-check:
-    name: vendor-check
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.15
-          install_args: go
-
-      - name: Check vendor drift
-        run: mise run vendor-check
+          needs: ${{ toJSON(needs) }}

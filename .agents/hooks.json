@@ -1,0 +1,60 @@
+{
+  "identity": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "uv run --no-project --quiet --python '>=3.15' python ../tools/interim/agent_identity.py record antigravity"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet --python '>=3.15' python ../tools/interim/agent_identity.py record antigravity",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet --python '>=3.15' python ../tools/interim/agent_identity.py record antigravity",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "pull-request": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet --python '>=3.15' python ../tools/interim/guard_gh_pr.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd .. && uv run --quiet python -m tools.interim.pull_request hook antigravity",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

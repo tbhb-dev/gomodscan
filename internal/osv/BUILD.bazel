@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@tbhb_rules//repo:defs.bzl", "repo_files")
+
+repo_files()
+
+go_library(
+    name = "osv",
+    srcs = ["osv.go"],
+    importpath = "go.tbhb.dev/gomodscan/internal/osv",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/retryhttp"],
+)
+
+go_test(
+    name = "osv_test",
+    srcs = [
+        "osv_internal_test.go",
+        "osv_test.go",
+    ],
+    embed = [":osv"],
+    visibility = ["//:__pkg__"],
+    deps = [
+        "//internal/retryhttp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+    # The whole-module Go checks in the root package take the tests too.
+)

@@ -1,0 +1,164 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Tony Burns
+
+"""Root workspace for building and testing gomodscan."""
+
+module(name = "gomodscan_dev")
+
+bazel_dep(name = "rules_go", version = "0.65.0")
+bazel_dep(name = "gazelle", version = "0.54.0")
+
+# Shared lint, format and test rules, with default tool pins. Not on the BCR
+# yet, so it comes from Git, pinned to a commit on the rules repository's main
+# branch. All three tbhb_rules* modules move together. Local development
+# points at a clone instead, with
+# `common --override_module=tbhb_rules=../rules` in .bazelrc.user.
+bazel_dep(name = "tbhb_rules", version = "0.0.0", dev_dependency = True)
+git_override(
+    module_name = "tbhb_rules",
+    commit = "431be578eed96a29d2467b9652feb5ac5c361ee6",
+    remote = "https://github.com/tbhb-dev/rules.git",
+)
+
+# The Python checks, a nested module of the same repository, built from
+# uv.lock. Same pin as tbhb_rules; locally,
+# `common --override_module=tbhb_rules_python=../rules/python`.
+bazel_dep(name = "tbhb_rules_python", version = "0.0.0", dev_dependency = True)
+git_override(
+    module_name = "tbhb_rules_python",
+    commit = "431be578eed96a29d2467b9652feb5ac5c361ee6",
+    remote = "https://github.com/tbhb-dev/rules.git",
+    strip_prefix = "python",
+)
+
+# The Go checks (golangci-lint, deadcode, go-arch-lint, go mod tidy and the
+# golangci-lint formatter), a nested module of the same repository. Same pin
+# as tbhb_rules; locally,
+# `common --override_module=tbhb_rules_go=../rules/go`.
+bazel_dep(name = "tbhb_rules_go", version = "0.0.0", dev_dependency = True)
+git_override(
+    module_name = "tbhb_rules_go",
+    commit = "431be578eed96a29d2467b9652feb5ac5c361ee6",
+    remote = "https://github.com/tbhb-dev/rules.git",
+    strip_prefix = "go",
+)
+
+# The Python environment: the interpreter .python-version names and every
+# package uv.lock pins, as `uv sync` gives a checkout.
+python = use_extension("@tbhb_rules_python//:extensions.bzl", "python", dev_dependency = True)
+python.project()
+
+# Dev dependencies: tooling that only this workspace needs.
+bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)
+bazel_dep(name = "bazelrc-preset.bzl", version = "1.10.0", dev_dependency = True)
+
+# The OS constraints that keep the interim tooling's tests off Windows, and
+# native_test for the Windows workspace status script's test.
+bazel_dep(name = "bazel_skylib", version = "1.9.2", dev_dependency = True)
+bazel_dep(name = "platforms", version = "1.1.0", dev_dependency = True)
+
+# Stable paths and PATH shims (.bazel_env/bin) for the Bazel-pinned tools,
+# which git hooks and editors call without starting Bazel.
+bazel_dep(name = "bazel_env.bzl", version = "0.10.0", dev_dependency = True)
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.from_file(go_mod = "//:go.mod")
+
+# Vet-class analyzers run during the build, for this repository's packages
+# only. golangci-lint stays the full linter (//:golangci_lint_test).
+go_sdk.nogo(
+    includes = ["//:__subpackages__"],
+    nogo = "//:nogo",
+)
+
+# Tool binaries: tbhb_rules' pins, one hub repository per tool. This module
+# refers to the same labels for its own targets and its bazel_env shims, so
+# each tool has one pin; override_repo swaps one if gomodscan ever needs to.
+tools = use_extension("@tbhb_rules//pins:extensions.bzl", "tools")
+use_repo(
+    tools,
+    "tbhb_rules_actionlint",
+    "tbhb_rules_cog",
+    "tbhb_rules_editorconfig_checker",
+    "tbhb_rules_git",
+    "tbhb_rules_gitleaks",
+    "tbhb_rules_rumdl",
+    "tbhb_rules_ryl",
+    "tbhb_rules_shellcheck",
+    "tbhb_rules_shfmt",
+    "tbhb_rules_tombi",
+    "tbhb_rules_vale",
+    "tbhb_rules_zizmor",
+)
+
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+use_repo(go_deps, "com_github_failsafe_go_failsafe_go", "com_github_owenrumney_go_sarif_v3", "com_github_stretchr_testify")
+
+# The modules go.sum lists, as a GOPROXY directory, so //:go_mod_tidy_test
+# runs offline.
+go_mod_proxy = use_extension("@tbhb_rules_go//:extensions.bzl", "go_mod_proxy", dev_dependency = True)
+go_mod_proxy.from_file(
+    name = "go_mod_proxy",
+    go_sum = "//:go.sum",
+)
+use_repo(go_mod_proxy, "go_mod_proxy")
+
+# Pinned copies of the SchemaStore schemas that pyproject.toml's embedded
+# tombi schema refers to by URL, so //:tombi_test validates offline. Pinned
+# to a SchemaStore commit, because www.schemastore.org serves whatever is
+# current and its digests drift.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+_SCHEMASTORE = "https://raw.githubusercontent.com/SchemaStore/schemastore/f0e072bb85076fcae82bebf058cf86520d4ea450/src/schemas/json/"
+
+http_file(
+    name = "schemastore_uv",
+    dev_dependency = True,
+    sha256 = "accd72042015703861297d12c682e0d9c35f435506acf942874927bb367ccdf7",
+    url = _SCHEMASTORE + "uv.json",
+)
+
+# Vale style packages, one per `Packages` URL in .vale.ini and in the same
+# order, pinned by digest. //:vale_test syncs from these instead of the
+# network, and `bazel run //:vale_sync` writes them into .vale/ for editors.
+# Move a version here and in .vale.ini together.
+http_file(
+    name = "vale_google",
+    dev_dependency = True,
+    downloaded_file_path = "Google.zip",
+    sha256 = "4b67fca1f2a88595b2a578ab98bbf3017a23af677b04f93e862843f3ea1a9a0b",
+    url = "https://github.com/errata-ai/Google/releases/download/v0.7.1/Google.zip",
+)
+
+http_file(
+    name = "vale_write_good",
+    dev_dependency = True,
+    downloaded_file_path = "write-good.zip",
+    sha256 = "2960ef10861ddc7dc76292a4967eb3789bf05ca24f862042f6d15f53332887f0",
+    url = "https://github.com/errata-ai/write-good/releases/download/v0.4.1/write-good.zip",
+)
+
+http_file(
+    name = "vale_proselint",
+    dev_dependency = True,
+    downloaded_file_path = "proselint.zip",
+    sha256 = "48b1fb481ba44f6505d44346b283f6cdc74efd234f913bbdb09bf34420fab81c",
+    url = "https://github.com/errata-ai/proselint/releases/download/v0.3.4/proselint.zip",
+)
+
+http_file(
+    name = "vale_ai_tells",
+    dev_dependency = True,
+    downloaded_file_path = "ai-tells.zip",
+    sha256 = "f8d1e981abbfbac1aa092d1623a1ac9bc935f0b15e8071e7a072915abddf0570",
+    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.37.0/ai-tells.zip",
+)
+
+http_file(
+    name = "vale_ai_tells_experimental",
+    dev_dependency = True,
+    downloaded_file_path = "ai-tells-experimental.zip",
+    sha256 = "d628f719afead6812028c2a31802d87c7572a931d9b16e94f2874d95e9d597b8",
+    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.37.0/ai-tells-experimental.zip",
+)

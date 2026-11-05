@@ -30,7 +30,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
+	"go.tbhb.dev/gomodscan/internal/retryhttp"
 )
 
 const (
@@ -62,7 +62,7 @@ var ErrUnexpectedStatus = errors.New("unexpected status from osv.dev")
 // or a transient 5xx, so one throttled or flaky response doesn't
 // end the scan.
 //
-//nolint:gochecknoglobals // intentional process-wide singleton for connection pooling.
+//nolint:gochecknoglobals,exhaustruct_v5 // a pooled process-wide singleton; the other fields keep their defaults
 var defaultHTTPClient = &http.Client{
 	Transport: retryhttp.NewTransport(
 		http.DefaultTransport, retryhttp.InitialDelay, retryhttp.MaxDelay, retryhttp.AttemptTimeout,
@@ -83,11 +83,11 @@ type Package struct {
 // reports summary text when present.
 type Vulnerability struct {
 	ID        string   `json:"id"`
-	Aliases   []string `json:"aliases,omitempty"`
 	Summary   string   `json:"summary,omitempty"`
 	Details   string   `json:"details,omitempty"`
 	Modified  string   `json:"modified,omitempty"`
 	Published string   `json:"published,omitempty"`
+	Aliases   []string `json:"aliases,omitempty"`
 }
 
 // queryRequest matches the JSON body shape POST /v1/query accepts.
@@ -114,27 +114,6 @@ type Client struct {
 	UserAgent  string
 }
 
-func (c *Client) baseURL() string {
-	if c.BaseURL != "" {
-		return c.BaseURL
-	}
-	return DefaultBaseURL
-}
-
-func (c *Client) httpClient() *http.Client {
-	if c.HTTPClient != nil {
-		return c.HTTPClient
-	}
-	return defaultHTTPClient
-}
-
-func (c *Client) userAgent() string {
-	if c.UserAgent != "" {
-		return c.UserAgent
-	}
-	return DefaultUserAgent
-}
-
 // Query returns every [Vulnerability] OSV.dev knows for the given
 // package at the given version. An empty slice means OSV has no
 // record covering that release, the common state for well-behaved
@@ -146,37 +125,42 @@ func (c *Client) Query(ctx context.Context, pkg Package, version string) ([]Vuln
 		return nil, err
 	}
 
-	body, err := json.Marshal(queryRequest{Version: version, Package: pkg})
-	if err != nil {
-		return nil, fmt.Errorf("marshal request for %s: %w", pkg.Name, err)
-	}
+	//nolint:errcheck,errchkjson // a request holds only strings, which always encode
+	body, _ := json.Marshal(queryRequest{Version: version, Package: pkg})
 
 	ctx, attempts := retryhttp.WithAttempts(ctx)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("build request for %s: %w", pkg.Name, err)
-	}
+
+	// NewRequestWithContext fails only for an invalid method, a nil context
+	// or an unparsable URL. None applies. The method is a constant and the
+	// context was accepted by WithAttempts, so it isn't nil. reqURL joins two
+	// constant segments onto a base URL that already parsed.
+	//nolint:errcheck // see the comment above
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
+
 	req.Header.Set("User-Agent", c.userAgent())
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return nil, &retryhttp.Error{Err: fmt.Errorf("POST %s: %w", reqURL, err), Attempts: attempts()}
+		return nil, &retryhttp.Error{Err: fmt.Errorf("POST %s: %w", reqURL, err), Attempts: attempts(), LastStatus: 0}
 	}
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		var qr queryResponse
-		if decErr := json.NewDecoder(resp.Body).Decode(&qr); decErr != nil {
+		var result queryResponse
+
+		decErr := json.NewDecoder(resp.Body).Decode(&result)
+		if decErr != nil {
 			return nil, &retryhttp.Error{
 				Err:        fmt.Errorf("decode %s: %w", pkg.Name, decErr),
 				Attempts:   attempts(),
 				LastStatus: resp.StatusCode,
 			}
 		}
-		return qr.Vulns, nil
+
+		return result.Vulns, nil
 	default:
 		return nil, &retryhttp.Error{
 			Err:        fmt.Errorf("%w: POST %s: status %d", ErrUnexpectedStatus, reqURL, resp.StatusCode),
@@ -186,10 +170,35 @@ func (c *Client) Query(ctx context.Context, pkg Package, version string) ([]Vuln
 	}
 }
 
+func (c *Client) baseURL() string {
+	if c.BaseURL != "" {
+		return c.BaseURL
+	}
+
+	return DefaultBaseURL
+}
+
+func (c *Client) httpClient() *http.Client {
+	if c.HTTPClient != nil {
+		return c.HTTPClient
+	}
+
+	return defaultHTTPClient
+}
+
+func (c *Client) userAgent() string {
+	if c.UserAgent != "" {
+		return c.UserAgent
+	}
+
+	return DefaultUserAgent
+}
+
 func (c *Client) buildURL() (string, error) {
 	base, err := url.Parse(c.baseURL())
 	if err != nil {
 		return "", fmt.Errorf("parse base URL %q: %w", c.baseURL(), err)
 	}
+
 	return base.JoinPath("v1", "query").String(), nil
 }

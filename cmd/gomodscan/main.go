@@ -54,10 +54,10 @@
 // gomodscan exits 0 when every module came back clean and 1 when it reports at
 // least one finding. It exits 2 when any module couldn't be evaluated after the
 // retries, or on any other operational failure (bad arguments, an unreadable
-// vendor/modules.txt, a failed output write). An unevaluated module takes
-// precedence over findings. A run with both exits 2.
+// vendor/modules.txt, a failed output write). A run with both an unevaluated
+// module and a finding exits 2.
 //
-// [findings]: https://pkg.go.dev/github.com/tbhb-dev/gomodscan/internal/findings
+// [findings]: https://pkg.go.dev/go.tbhb.dev/gomodscan/internal/findings
 package main
 
 import (
@@ -74,14 +74,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tbhb-dev/gomodscan/internal/buildmeta"
-	"github.com/tbhb-dev/gomodscan/internal/cachehttp"
-	"github.com/tbhb-dev/gomodscan/internal/exitcode"
-	"github.com/tbhb-dev/gomodscan/internal/findings"
-	"github.com/tbhb-dev/gomodscan/internal/osv"
-	"github.com/tbhb-dev/gomodscan/internal/pkgsite"
-	"github.com/tbhb-dev/gomodscan/internal/retryhttp"
-	"github.com/tbhb-dev/gomodscan/internal/vendormod"
+	"go.tbhb.dev/gomodscan/internal/buildmeta"
+	"go.tbhb.dev/gomodscan/internal/cachehttp"
+	"go.tbhb.dev/gomodscan/internal/exitcode"
+	"go.tbhb.dev/gomodscan/internal/findings"
+	"go.tbhb.dev/gomodscan/internal/osv"
+	"go.tbhb.dev/gomodscan/internal/pkgsite"
+	"go.tbhb.dev/gomodscan/internal/retryhttp"
+	"go.tbhb.dev/gomodscan/internal/vendormod"
 )
 
 const (
@@ -158,11 +158,26 @@ type finding struct {
 	kind    findingKind
 	module  string
 	version string
-	line    int
 	latest  string
 	reason  string
 	id      string
 	summary string
+	line    int
+}
+
+// newFinding starts a finding of the given kind at the module's pinned
+// version and manifest line. The caller fills the fields the kind uses.
+func newFinding(kind findingKind, mod vendormod.Module) finding {
+	return finding{
+		kind:    kind,
+		module:  mod.Path,
+		version: mod.Version,
+		line:    mod.Line,
+		latest:  "",
+		reason:  "",
+		id:      "",
+		summary: "",
+	}
 }
 
 // level maps a finding to its SARIF severity. A malicious-package hit
@@ -172,6 +187,7 @@ func (f finding) level() findings.Level {
 	if f.kind == kindMalicious {
 		return findings.LevelError
 	}
+
 	return findings.LevelWarning
 }
 
@@ -180,20 +196,24 @@ func (f finding) level() findings.Level {
 // consumers reading either output channel see the same vocabulary.
 func (f finding) props() map[string]string {
 	if f.kind == kindMalicious {
-		p := map[string]string{"id": f.id}
+		props := map[string]string{"id": f.id}
 		if f.summary != "" {
-			p["summary"] = strings.TrimSpace(f.summary)
+			props["summary"] = strings.TrimSpace(f.summary)
 		}
-		return p
+
+		return props
 	}
-	p := make(map[string]string)
+
+	props := make(map[string]string)
 	if f.reason != "" {
-		p["reason"] = strings.TrimSpace(f.reason)
+		props["reason"] = strings.TrimSpace(f.reason)
 	}
+
 	if f.kind == kindDeprecated && f.latest != "" {
-		p["latest"] = f.latest
+		props["latest"] = f.latest
 	}
-	return p
+
+	return props
 }
 
 // message returns the prose used as the SARIF result message. The text
@@ -209,6 +229,7 @@ func (f finding) message() string {
 		if f.summary == "" {
 			return fmt.Sprintf("OSV malicious-package advisory %s.", f.id)
 		}
+
 		return fmt.Sprintf("OSV malicious-package advisory %s: %s.", f.id, strings.TrimSpace(f.summary))
 	default:
 		return "Unknown finding."
@@ -235,7 +256,7 @@ type lookupError struct {
 	Lookup     string `json:"lookup"`
 	Error      string `json:"error"`
 	Attempts   int    `json:"attempts"`
-	LastStatus int    `json:"last_status"`
+	LastStatus int    `json:"last_status"` //nolint:tagliatelle // summary schema 1 names this field last_status
 }
 
 // summary is the -summary-json document. Modules counts the vendored
@@ -243,45 +264,62 @@ type lookupError struct {
 // lists every failed lookup (up to two per module, one per registry). Error
 // holds the reason a run stopped before its scan, and is nil otherwise.
 type summary struct {
-	Schema      int           `json:"schema"`
+	Error       *string       `json:"error"`
 	Version     string        `json:"version"`
+	Errors      []lookupError `json:"errors"`
+	Schema      int           `json:"schema"`
 	Modules     int           `json:"modules"`
 	Findings    int           `json:"findings"`
 	Unevaluated int           `json:"unevaluated"`
-	Errors      []lookupError `json:"errors"`
-	Error       *string       `json:"error"`
 }
 
 // newSummary starts the summary of a run over the given number of modules.
 func newSummary(modules int) *summary {
 	return &summary{
-		Schema:  summarySchema,
-		Version: buildmeta.Get().Version,
-		Modules: modules,
-		Errors:  []lookupError{},
+		Error:       nil,
+		Version:     buildmeta.Get().Version,
+		Errors:      []lookupError{},
+		Schema:      summarySchema,
+		Modules:     modules,
+		Findings:    0,
+		Unevaluated: 0,
 	}
 }
 
 // addError logs one failed lookup for mod to errOut and records it.
 func (s *summary) addError(errOut io.Writer, mod vendormod.Module, lookup string, err error) {
 	fmt.Fprintf(errOut, "%s: %s: %v\n", toolName, mod.Path, err)
-	le := lookupError{Module: mod.Path + "@" + mod.Version, Lookup: lookup, Error: err.Error()}
-	if re, ok := errors.AsType[*retryhttp.Error](err); ok {
-		le.Attempts = re.Attempts
-		le.LastStatus = re.LastStatus
+
+	entry := lookupError{
+		Module:     mod.Path + "@" + mod.Version,
+		Lookup:     lookup,
+		Error:      err.Error(),
+		Attempts:   0,
+		LastStatus: 0,
 	}
-	s.Errors = append(s.Errors, le)
+	if retryErr, ok := errors.AsType[*retryhttp.Error](err); ok {
+		entry.Attempts = retryErr.Attempts
+		entry.LastStatus = retryErr.LastStatus
+	}
+
+	s.Errors = append(s.Errors, entry)
 }
 
 func reasonSentence(r string) string {
 	if r == "" {
 		return "No reason recorded."
 	}
+
 	return "Reason: " + strings.TrimSpace(r) + "."
 }
 
+// exit ends the process. Tests replace it to observe the status main passes.
+//
+//nolint:gochecknoglobals // a test can't call os.Exit and survive
+var exit = os.Exit
+
 func main() {
-	os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
+	exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 // realMain wraps the imperative flag-parsing and exit-code wiring in a
@@ -290,30 +328,34 @@ func main() {
 // exercise the error paths via real arguments and writers rather
 // than the exit call.
 func realMain(args []string, out, errOut io.Writer) int {
-	fs := flag.NewFlagSet(toolName, flag.ContinueOnError)
-	fs.SetOutput(errOut)
+	flags := flag.NewFlagSet(toolName, flag.ContinueOnError)
+	flags.SetOutput(errOut)
+
 	var opts options
-	fs.StringVar(&opts.modroot, "modroot", "", "module root to scan (defaults to cwd)")
-	fs.StringVar(&opts.format, "format", formatText, "output format: text or sarif")
-	fs.StringVar(&opts.output, "o", "", "write the findings to `file` instead of stdout")
-	fs.StringVar(&opts.output, "output", "", "long form of -o: write the findings to `file`")
-	fs.StringVar(
+	flags.StringVar(&opts.modroot, "modroot", "", "module root to scan (defaults to cwd)")
+	flags.StringVar(&opts.format, "format", formatText, "output format: text or sarif")
+	flags.StringVar(&opts.output, "o", "", "write the findings to `file` instead of stdout")
+	flags.StringVar(&opts.output, "output", "", "long form of -o: write the findings to `file`")
+	flags.StringVar(
 		&opts.summaryJSON,
 		"summary-json",
 		"",
 		"write a JSON summary of the run to `file` on every exit status (schema 1)",
 	)
-	noCache := fs.Bool("no-cache", false, "disable the on-disk pkg.go.dev response cache")
-	cacheDir := fs.String(
+	noCache := flags.Bool("no-cache", false, "disable the on-disk pkg.go.dev response cache")
+	cacheDir := flags.String(
 		"cache-dir",
 		"",
 		"directory for the pkg.go.dev response cache (defaults to the per-user cache dir)",
 	)
-	showVersion := fs.Bool("version", false, "print version information and exit")
-	if err := fs.Parse(args); err != nil {
-		// The flag set has already printed err. The summary path only counts
-		// when its flag came before the bad argument.
-		return abort(opts.summaryJSON, err, errOut)
+
+	showVersion := flags.Bool("version", false, "print version information and exit")
+
+	parseErr := flags.Parse(args)
+	if parseErr != nil {
+		// The flag set has already printed parseErr. The summary path only
+		// counts when its flag came before the bad argument.
+		return abort(opts.summaryJSON, parseErr, errOut)
 	}
 
 	if *showVersion {
@@ -323,28 +365,31 @@ func realMain(args []string, out, errOut io.Writer) int {
 		// writes one too. It scanned nothing. Its counts are 0 and its error
 		// is null.
 		if opts.summaryJSON != "" {
-			if err := writeSummary(opts.summaryJSON, newSummary(0)); err != nil {
-				fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, err)
+			if !writeSummary(opts.summaryJSON, newSummary(0), errOut) {
 				return exitcode.ToolFailure
 			}
 		}
+
+		// gomutants:disable-next-line RETURN_ZERO reason="exitcode.OK is the constant 0"
 		return exitcode.OK
 	}
 
-	rc, err := run(
+	code, err := run(
 		context.Background(),
 		opts,
 		newVersionsClient(*noCache, *cacheDir),
-		&osv.Client{},
+		&osv.Client{BaseURL: "", HTTPClient: nil, UserAgent: ""},
 		out,
 		errOut,
 	)
+	// gomutants:disable-next-line BRANCH_IF reason="run pairs every error with ToolFailure"
 	if err != nil {
 		// run has already logged the cause, ahead of any summary-write error,
 		// and returned the tool-failure code.
 		return exitcode.ToolFailure
 	}
-	return rc
+
+	return code
 }
 
 // newVersionsClient builds the pkg.go.dev client the deprecated scanner uses.
@@ -355,31 +400,60 @@ func realMain(args []string, out, errOut io.Writer) int {
 // falls back to the plain client, which still retries and backs off.
 func newVersionsClient(noCache bool, cacheDir string) *pkgsite.Client {
 	if noCache {
-		return &pkgsite.Client{}
+		return plainVersionsClient()
 	}
-	dir := cacheDir
-	if dir == "" {
-		def, err := cachehttp.DefaultDir()
-		if err != nil {
-			return &pkgsite.Client{}
-		}
-		dir = def
+
+	dir, ok := resolveCacheDir(cacheDir)
+	if !ok {
+		return plainVersionsClient()
 	}
+
 	transport := cachehttp.NewTransport(
 		retryhttp.NewTransport(
 			http.DefaultTransport, retryhttp.InitialDelay, retryhttp.MaxDelay, retryhttp.AttemptTimeout,
 		),
 		cachehttp.NewDiskStore(dir),
 	)
-	return &pkgsite.Client{HTTPClient: &http.Client{Transport: transport}}
+
+	return &pkgsite.Client{
+		BaseURL: "",
+		HTTPClient: &http.Client{
+			Transport:     transport,
+			CheckRedirect: nil,
+			Jar:           nil,
+			Timeout:       0,
+		},
+		UserAgent: "",
+	}
 }
 
-// run reads the vendored module set once, runs both scanners over it, and
-// reports the result. A per-module lookup error logs to errOut and drops
-// that scanner's result for that module, then marks the module unevaluated,
-// which turns the run into a tool failure once the findings and the stderr
-// summary are out. An unknown -format, a failure to read the module set, emit
-// the findings, or write the -summary-json file also returns a tool-failure
+// resolveCacheDir returns the directory the caller asked for, or the per-user
+// default when the caller named none. It reports false when no default
+// directory can be located.
+func resolveCacheDir(cacheDir string) (string, bool) {
+	if cacheDir != "" {
+		return cacheDir, true
+	}
+
+	def, err := cachehttp.DefaultDir()
+	if err != nil {
+		return "", false
+	}
+
+	return def, true
+}
+
+// plainVersionsClient is the pkg.go.dev client with its defaults, which
+// still retries and backs off but doesn't cache.
+func plainVersionsClient() *pkgsite.Client {
+	return &pkgsite.Client{BaseURL: "", HTTPClient: nil, UserAgent: ""}
+}
+
+// run reads the vendored module set once and runs both scanners over it. A
+// per-module lookup error logs to errOut and drops that scanner's result for
+// that module, then marks the module unevaluated, which turns the run into a
+// tool failure once the findings and the stderr summary are out. An unknown -format, an unreadable module set, a failed
+// findings emit, or a failed -summary-json write also returns a tool-failure
 // code. For a scan that never starts, run logs the cause to errOut and
 // returns it as the error. A failed write logs to errOut itself before the
 // stderr summary that ends the output. run returns a nil error for it.
@@ -390,32 +464,41 @@ func run(
 	vulns vulnsClient,
 	out, errOut io.Writer,
 ) (int, error) {
-	if err := checkFormat(opts.format); err != nil {
-		return abortRun(opts.summaryJSON, err, errOut), err
+	formatErr := checkFormat(opts.format)
+	if formatErr != nil {
+		return abortRun(opts.summaryJSON, formatErr, errOut), formatErr
 	}
+
 	mods, err := vendormod.Read(opts.modroot)
 	if err != nil {
 		err = fmt.Errorf("read vendored modules: %w", err)
+
 		return abortRun(opts.summaryJSON, err, errOut), err
 	}
 
 	hits, sum := scan(ctx, mods, versions, vulns, errOut)
 	wrote := true
-	if emitErr := writeFindings(out, opts.output, opts.format, hits); emitErr != nil {
+
+	emitErr := writeFindings(out, opts.output, opts.format, hits)
+	if emitErr != nil {
 		fmt.Fprintf(errOut, "%s: emit findings: %v\n", toolName, emitErr)
+
 		wrote = false
 	}
+
 	if opts.summaryJSON != "" {
-		if sumErr := writeSummary(opts.summaryJSON, sum); sumErr != nil {
-			fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, sumErr)
+		if !writeSummary(opts.summaryJSON, sum, errOut) {
 			wrote = false
 		}
 	}
-	rc := report(sum, errOut)
+
+	code := report(sum, errOut)
+
 	if !wrote {
 		return exitcode.ToolFailure, nil
 	}
-	return rc, nil
+
+	return code, nil
 }
 
 // checkFormat rejects a -format value outside the {text, sarif} allowlist
@@ -424,6 +507,7 @@ func checkFormat(format string) error {
 	if format != formatText && format != formatSARIF {
 		return fmt.Errorf("%w: %q", errUnknownFormat, format)
 	}
+
 	return nil
 }
 
@@ -431,6 +515,7 @@ func checkFormat(format string) error {
 // cause, the order a flag-parse failure also gives.
 func abortRun(summaryPath string, cause error, errOut io.Writer) int {
 	fmt.Fprintf(errOut, "%s: %v\n", toolName, cause)
+
 	return abort(summaryPath, cause, errOut)
 }
 
@@ -442,11 +527,12 @@ func abort(summaryPath string, cause error, errOut io.Writer) int {
 	if summaryPath != "" {
 		sum := newSummary(0)
 		msg := cause.Error()
+
 		sum.Error = &msg
-		if err := writeSummary(summaryPath, sum); err != nil {
-			fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, err)
-		}
+
+		writeSummary(summaryPath, sum, errOut)
 	}
+
 	return exitcode.ToolFailure
 }
 
@@ -460,7 +546,9 @@ func scan(
 	errOut io.Writer,
 ) ([]finding, *summary) {
 	sum := newSummary(len(mods))
+
 	var hits []finding
+
 	for _, mod := range mods {
 		dep, depErr := evaluateDeprecated(ctx, versions, mod)
 		if depErr != nil {
@@ -480,7 +568,9 @@ func scan(
 			sum.Unevaluated++
 		}
 	}
+
 	sum.Findings = len(hits)
+
 	return hits, sum
 }
 
@@ -493,38 +583,55 @@ func report(sum *summary, errOut io.Writer) int {
 	if sum.Findings > 0 {
 		fmt.Fprintf(errOut, "%s: %d finding(s) across %d module(s)\n", toolName, sum.Findings, sum.Modules)
 	}
+
 	if sum.Unevaluated > 0 {
 		fmt.Fprintf(errOut, "%s: %d module(s) could not be evaluated\n", toolName, sum.Unevaluated)
+
 		return exitcode.ToolFailure
 	}
+
 	if sum.Findings > 0 {
 		return exitcode.Findings
 	}
+
 	fmt.Fprintf(errOut, "%s: scanned %d module(s), no findings\n", toolName, sum.Modules)
+
+	// gomutants:disable-next-line RETURN_ZERO reason="returning exitcode.OK already returns 0"
 	return exitcode.OK
 }
 
 // writeFindings emits the findings to out, or to the output file when one
-// is set. A file output renders the whole report in memory first, so an
-// emit failure leaves the file untouched.
+// is set. A file output renders the report in memory before it
+// replaces the file, and a rendering failure leaves the old file in place.
 func writeFindings(out io.Writer, output, format string, hits []finding) error {
 	if output == "" {
 		return emitFindings(out, format, hits)
 	}
+
 	var buf bytes.Buffer
-	if err := emitFindings(&buf, format, hits); err != nil {
+
+	err := emitFindings(&buf, format, hits)
+	if err != nil {
 		return err
 	}
+
 	return writeFileAtomic(output, buf.Bytes())
 }
 
-// writeSummary renders sum as one line of JSON and writes it to path.
-func writeSummary(path string, sum *summary) error {
-	data, err := json.Marshal(sum)
+// writeSummary renders sum as one line of JSON and writes it to path. A
+// failed write logs to errOut and reports false.
+func writeSummary(path string, sum *summary, errOut io.Writer) bool {
+	//nolint:errcheck,errchkjson // a summary holds only strings, integers and a slice of those, which always encode
+	data, _ := json.Marshal(sum)
+
+	err := writeFileAtomic(path, append(data, '\n'))
 	if err != nil {
-		return fmt.Errorf("marshal summary: %w", err)
+		fmt.Fprintf(errOut, "%s: write summary: %v\n", toolName, err)
+
+		return false
 	}
-	return writeFileAtomic(path, append(data, '\n'))
+
+	return true
 }
 
 // writeFileAtomic replaces path with data. It writes and syncs a temporary
@@ -535,33 +642,55 @@ func writeSummary(path string, sum *summary) error {
 // it would for [os.Create], where [os.CreateTemp] would leave it 0600.
 func writeFileAtomic(path string, data []byte) error {
 	name := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".tmp"+rand.Text())
+
 	tmp, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, reportPerm)
 	if err != nil {
 		return fmt.Errorf("create temp file for %s: %w", path, err)
 	}
-	if commitErr := commitTemp(tmp, path, data); commitErr != nil {
+
+	commitErr := commitTemp(tmp, path, data)
+	if commitErr != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
+
 		return commitErr
 	}
+
 	return nil
+}
+
+// tempFile is the part of [os.File] that commitTemp uses. Tests supply a
+// fake that fails each step.
+type tempFile interface {
+	io.Writer
+	io.Closer
+	Sync() error
+	Name() string
 }
 
 // commitTemp writes data to the temporary file and flushes it to disk. It
 // then closes the file and renames it over path.
-func commitTemp(tmp *os.File, path string, data []byte) error {
-	if _, err := tmp.Write(data); err != nil {
+func commitTemp(tmp tempFile, path string, data []byte) error {
+	_, err := tmp.Write(data)
+	if err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := tmp.Sync(); err != nil {
+
+	err = tmp.Sync()
+	if err != nil {
 		return fmt.Errorf("sync %s: %w", path, err)
 	}
-	if err := tmp.Close(); err != nil {
+
+	err = tmp.Close()
+	if err != nil {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+
+	err = os.Rename(tmp.Name(), path)
+	if err != nil {
 		return fmt.Errorf("replace %s: %w", path, err)
 	}
+
 	return nil
 }
 
@@ -577,19 +706,21 @@ func emitFindings(out io.Writer, format string, hits []finding) error {
 }
 
 func emitText(out io.Writer, hits []finding) error {
-	for _, f := range hits {
-		if err := findings.WriteText(
+	for _, hit := range hits {
+		err := findings.WriteText(
 			out,
-			f.level(),
+			hit.level(),
 			toolName,
-			string(f.kind),
-			f.module,
-			f.version,
-			f.props(),
-		); err != nil {
-			return fmt.Errorf("emit text finding for %s: %w", f.module, err)
+			string(hit.kind),
+			hit.module,
+			hit.version,
+			hit.props(),
+		)
+		if err != nil {
+			return fmt.Errorf("emit text finding for %s: %w", hit.module, err)
 		}
 	}
+
 	return nil
 }
 
@@ -604,13 +735,17 @@ func emitSARIF(out io.Writer, hits []finding) error {
 	run.AddRule(string(kindMalicious)).
 		WithDescription("Module appears in the OSV malicious-package registry").
 		WithHelpURI("https://github.com/ossf/malicious-packages")
-	for _, f := range hits {
-		findings.AddResult(run, string(f.kind), f.level(), f.message(), f.module, f.version,
-			findings.Location{URI: vendorModulesPath, Line: f.line}, f.props())
+
+	for _, hit := range hits {
+		findings.AddResult(run, string(hit.kind), hit.level(), hit.message(), hit.module, hit.version,
+			findings.Location{URI: vendorModulesPath, Line: hit.line}, hit.props())
 	}
-	if err := findings.WriteSARIF(out, run); err != nil {
+
+	err := findings.WriteSARIF(out, run)
+	if err != nil {
 		return fmt.Errorf("emit sarif: %w", err)
 	}
+
 	return nil
 }
 
@@ -623,8 +758,10 @@ func evaluateDeprecated(ctx context.Context, client versionsClient, mod vendormo
 		if errors.Is(err, pkgsite.ErrNotFound) {
 			return nil, nil // private, replaced, or not indexed: skip
 		}
+
 		return nil, fmt.Errorf("lookup versions: %w", err)
 	}
+
 	return collectDeprecated(mod, versions), nil
 }
 
@@ -638,41 +775,38 @@ func collectDeprecated(mod vendormod.Module, versions []pkgsite.ModuleVersion) [
 	if len(versions) == 0 {
 		return nil
 	}
+
 	latest := versions[0].LatestVersion
+
 	var hits []finding
-	for _, v := range versions {
-		if v.Version == mod.Version && v.Retracted {
-			hits = append(hits, finding{
-				kind:    kindRetracted,
-				module:  mod.Path,
-				version: mod.Version,
-				line:    mod.Line,
-				reason:  v.RetractionReason,
-			})
+
+	for _, ver := range versions {
+		if ver.Version == mod.Version && ver.Retracted {
+			hit := newFinding(kindRetracted, mod)
+			hit.reason = ver.RetractionReason
+			hits = append(hits, hit)
 		}
-		if v.Version == latest && v.Deprecated {
-			hits = append(hits, finding{
-				kind:    kindDeprecated,
-				module:  mod.Path,
-				version: mod.Version,
-				line:    mod.Line,
-				latest:  latest,
-				reason:  v.DeprecationReason,
-			})
+
+		if ver.Version == latest && ver.Deprecated {
+			hit := newFinding(kindDeprecated, mod)
+			hit.latest = latest
+			hit.reason = ver.DeprecationReason
+			hits = append(hits, hit)
 		}
 	}
+
 	return hits
 }
 
 // evaluateMalicious queries OSV for the module at its pinned version and
 // classifies the response. OSV returns 200 with an empty list for
-// unknown packages. An empty result signals the common clean state, not an
-// error.
+// unknown packages. An empty result is the common clean state.
 func evaluateMalicious(ctx context.Context, client vulnsClient, mod vendormod.Module) ([]finding, error) {
 	vulns, err := client.Query(ctx, osv.Package{Name: mod.Path, Ecosystem: goEcosystem}, mod.Version)
 	if err != nil {
 		return nil, fmt.Errorf("lookup vulns: %w", err)
 	}
+
 	return collectMalicious(mod, vulns), nil
 }
 
@@ -682,18 +816,17 @@ func evaluateMalicious(ctx context.Context, client vulnsClient, mod vendormod.Mo
 // malware reports and belong to the govulncheck recipe.
 func collectMalicious(mod vendormod.Module, vulns []osv.Vulnerability) []finding {
 	var hits []finding
-	for _, v := range vulns {
-		if !strings.HasPrefix(v.ID, maliciousIDPrefix) {
+
+	for _, vuln := range vulns {
+		if !strings.HasPrefix(vuln.ID, maliciousIDPrefix) {
 			continue
 		}
-		hits = append(hits, finding{
-			kind:    kindMalicious,
-			module:  mod.Path,
-			version: mod.Version,
-			line:    mod.Line,
-			id:      v.ID,
-			summary: v.Summary,
-		})
+
+		hit := newFinding(kindMalicious, mod)
+		hit.id = vuln.ID
+		hit.summary = vuln.Summary
+		hits = append(hits, hit)
 	}
+
 	return hits
 }
