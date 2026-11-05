@@ -111,6 +111,7 @@ func (t *transport) fresh(req *http.Request, key string) (*http.Response, bool) 
 	}
 
 	ent, err := decode(blob)
+	// gomutants:disable-next-line EXPRESSION_REMOVE reason="a failed decode gives an expired zero entry"
 	if err != nil || !time.Now().Before(ent.Expires) {
 		return nil, false
 	}
@@ -125,7 +126,7 @@ func (t *transport) fresh(req *http.Request, key string) (*http.Response, bool) 
 // encode skips the write yet still returns the buffered body.
 func (t *transport) cache(key string, resp *http.Response) *http.Response {
 	ctl := parseCacheControl(resp.Header.Get("Cache-Control"))
-	if resp.StatusCode != http.StatusOK || !ctl.present || ctl.noStore || ctl.maxAge < time.Second {
+	if resp.StatusCode != http.StatusOK || ctl.noStore || ctl.maxAge < time.Second {
 		return resp
 	}
 
@@ -194,14 +195,12 @@ func cacheKey(req *http.Request) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// cacheControl holds the Cache-Control directives the cache acts on. present
-// reports whether the header had any directive at all, so a caller can
-// tell "no caching guidance" (don't store) apart from "max-age=0" (store
-// an entry that's never fresh).
+// cacheControl holds the Cache-Control directives the cache acts on. A
+// header with no max-age directive leaves the max-age at zero, which the cache treats the
+// same as max-age=0: nothing is stored.
 type cacheControl struct {
 	maxAge  time.Duration
 	noStore bool
-	present bool
 }
 
 // parseCacheControl pulls the directives the cache acts on out of a
@@ -211,11 +210,6 @@ func parseCacheControl(header string) cacheControl {
 
 	for raw := range strings.SplitSeq(header, ",") {
 		directive := strings.ToLower(strings.TrimSpace(raw))
-		if directive == "" {
-			continue
-		}
-
-		ctl.present = true
 		if directive == "no-store" {
 			ctl.noStore = true
 		} else if value, ok := strings.CutPrefix(directive, "max-age="); ok {

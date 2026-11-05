@@ -370,6 +370,7 @@ func realMain(args []string, out, errOut io.Writer) int {
 			}
 		}
 
+		// gomutants:disable-next-line RETURN_ZERO reason="exitcode.OK is the constant 0"
 		return exitcode.OK
 	}
 
@@ -381,6 +382,7 @@ func realMain(args []string, out, errOut io.Writer) int {
 		out,
 		errOut,
 	)
+	// gomutants:disable-next-line BRANCH_IF reason="run pairs every error with ToolFailure"
 	if err != nil {
 		// run has already logged the cause, ahead of any summary-write error,
 		// and returned the tool-failure code.
@@ -594,6 +596,7 @@ func report(sum *summary, errOut io.Writer) int {
 
 	fmt.Fprintf(errOut, "%s: scanned %d module(s), no findings\n", toolName, sum.Modules)
 
+	// gomutants:disable-next-line RETURN_ZERO reason="returning exitcode.OK already returns 0"
 	return exitcode.OK
 }
 

@@ -96,41 +96,41 @@ func TestParseCacheControl(t *testing.T) {
 		header string
 		want   cacheControl
 	}{
-		{"empty header", "", cacheControl{maxAge: 0, noStore: false, present: false}},
-		{"only empty directives", " , ,", cacheControl{maxAge: 0, noStore: false, present: false}},
+		{"empty header", "", cacheControl{maxAge: 0, noStore: false}},
+		{"only empty directives", " , ,", cacheControl{maxAge: 0, noStore: false}},
 		{
 			"skips a leading empty directive",
 			", max-age=60",
-			cacheControl{maxAge: time.Minute, noStore: false, present: true},
+			cacheControl{maxAge: time.Minute, noStore: false},
 		},
 		{
 			"an empty directive does not end the parse",
 			"max-age=60,,no-store",
-			cacheControl{maxAge: time.Minute, noStore: true, present: true},
+			cacheControl{maxAge: time.Minute, noStore: true},
 		},
-		{"one second", "max-age=1", cacheControl{maxAge: time.Second, noStore: false, present: true}},
-		{"zero grants nothing", "max-age=0", cacheControl{maxAge: 0, noStore: false, present: true}},
-		{"negative grants nothing", "max-age=-5", cacheControl{maxAge: 0, noStore: false, present: true}},
+		{"one second", "max-age=1", cacheControl{maxAge: time.Second, noStore: false}},
+		{"zero grants nothing", "max-age=0", cacheControl{maxAge: 0, noStore: false}},
+		{"negative grants nothing", "max-age=-5", cacheControl{maxAge: 0, noStore: false}},
 		{
 			"a later max-age overrides an earlier one",
 			"max-age=60, max-age=0",
-			cacheControl{maxAge: 0, noStore: false, present: true},
+			cacheControl{maxAge: 0, noStore: false},
 		},
 		{
 			"out of range grants nothing",
 			"max-age=99999999999999999999",
-			cacheControl{maxAge: 0, noStore: false, present: true},
+			cacheControl{maxAge: 0, noStore: false},
 		},
-		{"not a number grants nothing", "max-age=soon", cacheControl{maxAge: 0, noStore: false, present: true}},
+		{"not a number grants nothing", "max-age=soon", cacheControl{maxAge: 0, noStore: false}},
 		{
 			"ignores case and spacing",
 			" Max-Age=30 , NO-STORE",
-			cacheControl{maxAge: 30 * time.Second, noStore: true, present: true},
+			cacheControl{maxAge: 30 * time.Second, noStore: true},
 		},
 		{
-			"an unrecognized directive still counts as present",
+			"an unrecognized directive grants nothing",
 			"public",
-			cacheControl{maxAge: 0, noStore: false, present: true},
+			cacheControl{maxAge: 0, noStore: false},
 		},
 	}
 
