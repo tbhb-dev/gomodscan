@@ -16,10 +16,13 @@ go_library(
 
 go_test(
     name = "osv_test",
-    srcs = ["osv_test.go"],
+    srcs = [
+        "osv_internal_test.go",
+        "osv_test.go",
+    ],
+    embed = [":osv"],
     visibility = ["//:__pkg__"],
     deps = [
-        ":osv",
         "//internal/retryhttp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -21,11 +21,12 @@ go_test(
     name = "pkgsite_test",
     srcs = [
         "cache_integration_test.go",
+        "pkgsite_internal_test.go",
         "pkgsite_test.go",
     ],
+    embed = [":pkgsite"],
     visibility = ["//:__pkg__"],
     deps = [
-        ":pkgsite",
         "//internal/cachehttp",
         "//internal/retryhttp",
         "@com_github_stretchr_testify//assert",

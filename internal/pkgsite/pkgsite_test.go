@@ -24,6 +24,15 @@ import (
 	"go.tbhb.dev/gomodscan/internal/retryhttp"
 )
 
+// The in-memory clients never dial these. They name closed loopback ports, so
+// a mutant that drops the injected client gets a refused connection at once.
+// A named host would make it wait on DNS in a sandbox with no network.
+const (
+	unreachableURL = "http://127.0.0.1:1"
+	configuredHost = "127.0.0.1:2"
+	configuredURL  = "http://" + configuredHost
+)
+
 // mustWrite writes body to w and records any error against t.
 // The httptest handlers run in their own goroutine. t.Errorf is
 // allowed from that context: it records the failure without panicking.
@@ -436,7 +445,7 @@ func retryClient(
 		return respond(count.Add(1), req)
 	})
 	client := &pkgsite.Client{
-		BaseURL: "http://example.test",
+		BaseURL: unreachableURL,
 		HTTPClient: &http.Client{
 			Transport: retryhttp.NewTransport(
 				inner, retryhttp.InitialDelay, retryhttp.MaxDelay, attemptTimeout,
@@ -700,7 +709,7 @@ func TestVersions_SendsTheJSONHeaders(t *testing.T) {
 
 	var gotAccept string
 
-	client := newCachedClient("http://example.test", roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	client := newCachedClient(unreachableURL, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		gotAccept = req.Header.Get("Accept")
 
 		return fakeResponse(req, http.StatusOK, retryOKBody), nil
@@ -717,7 +726,7 @@ func TestVersions_UsesTheConfiguredClientAndBaseURL(t *testing.T) {
 	var gotHost string
 
 	client := newCachedClient(
-		"http://configured.test",
+		configuredURL,
 		roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			gotHost = req.URL.Host
 
@@ -727,13 +736,13 @@ func TestVersions_UsesTheConfiguredClientAndBaseURL(t *testing.T) {
 
 	_, err := client.Versions(t.Context(), "example.com/m")
 	require.NoError(t, err)
-	assert.Equal(t, "configured.test", gotHost)
+	assert.Equal(t, configuredHost, gotHost)
 }
 
 func TestVersions_WrapsTheTransportError(t *testing.T) {
 	t.Parallel()
 
-	client := newCachedClient("http://example.test", roundTripperFunc(func(*http.Request) (*http.Response, error) {
+	client := newCachedClient(unreachableURL, roundTripperFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errConnRefused
 	}))
 
@@ -748,7 +757,7 @@ func TestVersions_WrapsTheTransportError(t *testing.T) {
 func TestVersions_WrapsTheDecodeError(t *testing.T) {
 	t.Parallel()
 
-	client := newCachedClient("http://example.test", roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	client := newCachedClient(unreachableURL, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return fakeResponse(req, http.StatusOK, "not json"), nil
 	}))
 
