@@ -218,11 +218,18 @@ gobco_test(
     tests = ["//internal/buildmeta:buildmeta_test"],
 )
 
+# gobco type-checks every file in the package and ignores build constraints,
+# so the unix-only umask test breaks it on Windows. The other platforms
+# measure the same conditions.
 gobco_test(
     name = "cachehttp_gobco_test",
     go_mod = "go.mod",
     go_sum = "go.sum",
     proxy = "@go_mod_proxy//:proxy",
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tests = ["//internal/cachehttp:cachehttp_test"],
 )
 
