@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -837,21 +836,28 @@ func stderrLines(errOut string) []string {
 	return strings.Split(strings.TrimSuffix(errOut, "\n"), "\n")
 }
 
-// readOnlyDir returns a directory the test process can't create files in.
-// It skips the test where permission bits don't stop the writer: on Windows,
-// and as root. The directory is empty, so t.TempDir's cleanup removes it
-// without restoring write permission first.
-func readOnlyDir(t *testing.T) string {
+// blockedDir returns a path the test process can't create files under. The
+// path is a regular file, so creating anything beneath it fails on every
+// platform and for every user, root included.
+func blockedDir(t *testing.T) string {
 	t.Helper()
 
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
-		t.Skip("directory permission bits don't block this writer")
-	}
+	path := filepath.Join(t.TempDir(), "not-a-directory")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
 
-	dir := t.TempDir()
-	require.NoError(t, os.Chmod(dir, 0o500)) //nolint:gosec // a read-only directory is the point of the helper.
+	return path
+}
 
-	return dir
+// assertStillBlocked checks that a failed write didn't change the tree. The blocking
+// path is still an empty regular file, and nothing new sits beside it.
+func assertStillBlocked(t *testing.T, path string) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.True(t, info.Mode().IsRegular())
+	assert.Zero(t, info.Size())
+	assert.Equal(t, []string{filepath.Base(path)}, dirEntries(t, filepath.Dir(path)))
 }
 
 //nolint:dupl,funlen,maintidx // scenarios repeat steps in one function that holds the whole table
@@ -1195,7 +1201,7 @@ func TestRun_Output(t *testing.T) {
 		t.Parallel()
 
 		dir := fixtureRoot("bad")
-		outDir := readOnlyDir(t)
+		outDir := blockedDir(t)
 
 		var out, errOut bytes.Buffer
 
@@ -1221,7 +1227,7 @@ func TestRun_Output(t *testing.T) {
 		assert.True(t, strings.HasPrefix(lines[0], "gomodscan: emit findings: create temp file"), lines[0])
 		assert.Equal(t, "gomodscan: 1 finding(s) across 1 module(s)", lines[1])
 		assert.Empty(t, out.String())
-		assert.Empty(t, dirEntries(t, outDir))
+		assertStillBlocked(t, outDir)
 	})
 
 	t.Run("a failed rename removes the temporary file", func(t *testing.T) {
@@ -1553,7 +1559,7 @@ func TestRun_SummaryJSON(t *testing.T) {
 		t.Parallel()
 
 		dir := fixtureRoot("empty")
-		outDir := readOnlyDir(t)
+		outDir := blockedDir(t)
 
 		var out, errOut bytes.Buffer
 
@@ -1578,7 +1584,7 @@ func TestRun_SummaryJSON(t *testing.T) {
 		require.Len(t, lines, 2)
 		assert.True(t, strings.HasPrefix(lines[0], "gomodscan: write summary: create temp file for"), lines[0])
 		assert.Equal(t, "gomodscan: scanned 0 module(s), no findings", lines[1])
-		assert.Empty(t, dirEntries(t, outDir))
+		assertStillBlocked(t, outDir)
 	})
 
 	t.Run("both failed writes print ahead of the stderr summary", func(t *testing.T) {
@@ -1590,7 +1596,7 @@ func TestRun_SummaryJSON(t *testing.T) {
 			errors:    map[string]error{modExplode: exhaustedLookup()},
 			responses: nil,
 		}
-		outDir := readOnlyDir(t)
+		outDir := blockedDir(t)
 
 		var out, errOut bytes.Buffer
 
@@ -1686,7 +1692,7 @@ func TestRun_SummaryJSON(t *testing.T) {
 
 	t.Run("a failed summary write before the scan still exits 2", func(t *testing.T) {
 		t.Parallel()
-		outDir := readOnlyDir(t)
+		outDir := blockedDir(t)
 
 		var out, errOut bytes.Buffer
 
@@ -1712,7 +1718,7 @@ func TestRun_SummaryJSON(t *testing.T) {
 		require.Len(t, lines, 2)
 		assert.Equal(t, "gomodscan: "+err.Error(), lines[0])
 		assert.True(t, strings.HasPrefix(lines[1], "gomodscan: write summary: create temp file for"), lines[1])
-		assert.Empty(t, dirEntries(t, outDir))
+		assertStillBlocked(t, outDir)
 	})
 }
 
@@ -1749,7 +1755,7 @@ func TestRealMain(t *testing.T) {
 
 	t.Run("a bad flag followed by a failed summary write prints the cause first", func(t *testing.T) {
 		t.Parallel()
-		outDir := readOnlyDir(t)
+		outDir := blockedDir(t)
 
 		var out, errOut bytes.Buffer
 
@@ -1763,7 +1769,7 @@ func TestRealMain(t *testing.T) {
 		require.GreaterOrEqual(t, write, 0, got)
 		assert.Less(t, cause, write, "the flag error must print before the write error")
 		assert.NotContains(t, got, "module(s)")
-		assert.Empty(t, dirEntries(t, outDir))
+		assertStillBlocked(t, outDir)
 	})
 
 	t.Run("missing vendor tree prints the error line and returns ToolFailure", func(t *testing.T) {
@@ -1780,7 +1786,7 @@ func TestRealMain(t *testing.T) {
 
 	t.Run("a failed findings write returns ToolFailure", func(t *testing.T) {
 		t.Parallel()
-		outDir := readOnlyDir(t)
+		outDir := blockedDir(t)
 
 		var out, errOut bytes.Buffer
 
@@ -1855,7 +1861,7 @@ func TestRealMain(t *testing.T) {
 
 	t.Run("version flag exits 2 when the summary write fails", func(t *testing.T) {
 		t.Parallel()
-		outDir := readOnlyDir(t)
+		outDir := blockedDir(t)
 
 		var out, errOut bytes.Buffer
 
@@ -1863,7 +1869,7 @@ func TestRealMain(t *testing.T) {
 		assert.Equal(t, exitcode.ToolFailure, code)
 		assert.Contains(t, out.String(), "gomodscan ")
 		assert.True(t, strings.HasPrefix(errOut.String(), "gomodscan: write summary: create temp file for"))
-		assert.Empty(t, dirEntries(t, outDir))
+		assertStillBlocked(t, outDir)
 	})
 }
 
