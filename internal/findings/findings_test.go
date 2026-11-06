@@ -18,6 +18,39 @@ import (
 	"go.tbhb.dev/gomodscan/internal/findings"
 )
 
+// TestWriteText_SortsManyKeysOnEveryRun makes a missing key sort fail
+// on every run. Go randomizes map iteration order, so a 2-key map
+// comes out sorted by chance about half the time. The randomization
+// isn't a uniform shuffle, so this test doesn't depend on the odds of a
+// random order. The literal lists 16 keys in an order that's neither
+// sorted nor a rotation of the sorted order, and the test writes the
+// finding 50 times, so in practice a missing sort fails every run.
+func TestWriteText_SortsManyKeysOnEveryRun(t *testing.T) {
+	t.Parallel()
+
+	const repeats = 50
+
+	props := map[string]string{
+		"k09": "v09", "k03": "v03", "k14": "v14", "k01": "v01",
+		"k12": "v12", "k07": "v07", "k16": "v16", "k05": "v05",
+		"k10": "v10", "k02": "v02", "k15": "v15", "k08": "v08",
+		"k04": "v04", "k13": "v13", "k06": "v06", "k11": "v11",
+	}
+	want := "warning: depscan/deprecated: example.com/a@v1.0.0" +
+		" k01=v01 k02=v02 k03=v03 k04=v04 k05=v05 k06=v06 k07=v07 k08=v08" +
+		" k09=v09 k10=v10 k11=v11 k12=v12 k13=v13 k14=v14 k15=v15 k16=v16\n"
+
+	for range repeats {
+		var buf bytes.Buffer
+
+		err := findings.WriteText(
+			&buf, findings.LevelWarning, toolName, ruleDeprecated, modA, v100, props,
+		)
+		require.NoError(t, err)
+		require.Equal(t, want, buf.String())
+	}
+}
+
 //nolint:dupl // test scenarios repeat the same arrange and assert steps
 func TestWriteText(t *testing.T) {
 	t.Parallel()
