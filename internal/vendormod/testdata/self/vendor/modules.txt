@@ -26,8 +26,8 @@ github.com/google/uuid
 # github.com/influxdata/tdigest v0.0.1
 ## explicit; go 1.13
 github.com/influxdata/tdigest
-# github.com/owenrumney/go-sarif/v3 v3.3.1
-## explicit; go 1.24
+# github.com/owenrumney/go-sarif/v3 v3.3.2
+## explicit; go 1.26.10
 github.com/owenrumney/go-sarif/v3/pkg/report
 github.com/owenrumney/go-sarif/v3/pkg/report/utils
 github.com/owenrumney/go-sarif/v3/pkg/report/v210/sarif
