@@ -1,10 +1,12 @@
 module go.tbhb.dev/gomodscan
 
-go 1.26.10
+go 1.26
+
+toolchain go1.26.10
 
 require (
 	github.com/failsafe-go/failsafe-go v0.9.8
-	github.com/owenrumney/go-sarif/v3 v3.3.2
+	github.com/owenrumney/go-sarif/v3 v3.3.1
 	github.com/stretchr/testify v1.12.1
 )
 
