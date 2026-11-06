@@ -1,11 +1,8 @@
 # github.com/bits-and-blooms/bitset v1.24.4
 ## explicit; go 1.16
 github.com/bits-and-blooms/bitset
-# github.com/davecgh/go-spew v1.1.1
-## explicit
-github.com/davecgh/go-spew/spew
-# github.com/failsafe-go/failsafe-go v0.9.6
-## explicit; go 1.21
+# github.com/failsafe-go/failsafe-go v0.9.8
+## explicit; go 1.22
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/adaptivelimiter
 github.com/failsafe-go/failsafe-go/adaptivethrottler
@@ -29,21 +26,18 @@ github.com/google/uuid
 # github.com/influxdata/tdigest v0.0.1
 ## explicit; go 1.13
 github.com/influxdata/tdigest
-# github.com/kr/text v0.2.0
-## explicit
-# github.com/owenrumney/go-sarif/v3 v3.3.0
+# github.com/owenrumney/go-sarif/v3 v3.3.1
 ## explicit; go 1.24
 github.com/owenrumney/go-sarif/v3/pkg/report
 github.com/owenrumney/go-sarif/v3/pkg/report/utils
 github.com/owenrumney/go-sarif/v3/pkg/report/v210/sarif
 github.com/owenrumney/go-sarif/v3/pkg/report/v22/sarif
-# github.com/pmezard/go-difflib v1.0.0
-## explicit
-github.com/pmezard/go-difflib/difflib
-# github.com/stretchr/testify v1.11.1
+# github.com/stretchr/testify v1.12.1
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/internal/difflib
+github.com/stretchr/testify/internal/spew
 github.com/stretchr/testify/require
 # github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f
 ## explicit
@@ -54,8 +48,8 @@ github.com/xeipuuv/gojsonreference
 # github.com/xeipuuv/gojsonschema v1.2.0
 ## explicit
 github.com/xeipuuv/gojsonschema
+# go.yaml.in/yaml/v3 v3.0.5
+## explicit; go 1.16
+go.yaml.in/yaml/v3
 # golang.org/x/net v0.57.0
 ## explicit; go 1.25.0
-# gopkg.in/yaml.v3 v3.0.1
-## explicit
-gopkg.in/yaml.v3
