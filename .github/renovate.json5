@@ -24,5 +24,13 @@
       matchDepNames: ["go"],
       enabled: false,
     },
+    // go-sarif v3.3.2 declares go 1.26.10, and taking it makes gomodTidy
+    // raise the go directive past go 1.26. Hold it below that release until
+    // a person raises the go directive (tbhb-dev/gomodscan#93).
+    {
+      matchManagers: ["gomod"],
+      matchDepNames: ["github.com/owenrumney/go-sarif/v3"],
+      allowedVersions: "<3.3.2",
+    },
   ],
 }
