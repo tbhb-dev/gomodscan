@@ -14,23 +14,14 @@
   ],
 
   // The Go module, Bazel pins and uv lock are covered by the presets. The one
-  // addition is a rule that stops Renovate from changing the go and toolchain
-  // directives in go.mod: the module declares go 1.26 on purpose, and the
-  // toolchain directive sets the Go release Bazel's go_sdk uses, so a person
-  // changes either one.
+  // addition is a rule that stops Renovate from changing the go directive in
+  // go.mod. A person raises it by hand, and Bazel's go_sdk follows it, so the
+  // directive sets the Go release the build uses.
   packageRules: [
     {
       matchManagers: ["gomod"],
       matchDepNames: ["go"],
       enabled: false,
-    },
-    // go-sarif v3.3.2 declares go 1.26.10, and taking it makes gomodTidy
-    // raise the go directive past go 1.26. Hold it below that release until
-    // a person raises the go directive (tbhb-dev/gomodscan#93).
-    {
-      matchManagers: ["gomod"],
-      matchDepNames: ["github.com/owenrumney/go-sarif/v3"],
-      allowedVersions: "<3.3.2",
     },
   ],
 }

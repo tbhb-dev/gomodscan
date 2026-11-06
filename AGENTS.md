@@ -33,7 +33,7 @@ Each check runs by its target, such as `bazelisk test //:vale_test`. The Go chec
 
 ## Go toolchain
 
-`go.mod` declares the `go` and `toolchain` lines, and Bazel's Go SDK follows the `toolchain` line with `GOTOOLCHAIN=local`. Renovate leaves both lines alone. Raise them by hand when a tool needs a newer one, as gomutants did.
+`go.mod` declares the `go` line, and Bazel's Go SDK follows it with `GOTOOLCHAIN=local`. The file has no `toolchain` line. Renovate leaves the `go` line alone. Raise it by hand when a tool needs a newer one, as gomutants did.
 
 Run Go commands through `.bazel_env/bin/go` so they use the pinned SDK. Edit imports and dependencies in `go.mod`, then run Gazelle and `bazelisk mod tidy`, and commit `go.sum` and `MODULE.bazel.lock` with them. Bazel generates `MODULE.bazel.lock`, so never edit it by hand.
 
