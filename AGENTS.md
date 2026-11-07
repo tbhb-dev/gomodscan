@@ -16,7 +16,7 @@ Tests read their inputs from `testdata/` directories. The `vendormod` fixture `t
 
 ## Commands
 
-Bazel pins every tool and runs every check. The only things [mise](https://mise.jdx.dev) installs are `bazelisk` and `uv`, at the versions `mise.toml` and `mise.lock` pin. A fresh worktree needs `mise install`, then `bazelisk run //:bazel_env` to build the tool shims, then `tools/interim/install.sh` to install the git hooks that call them.
+Bazel pins every tool and runs every check. The only things [mise](https://mise.jdx.dev) installs are `bazelisk` and `uv`, at the versions `mise.toml` and `mise.lock` pin. A fresh worktree needs `mise install`, then `bazelisk run //:bazel_env` for the tool shims, while `tbhbdev alpha install` runs once per machine for the user-level harness hooks, whose session start hook installs the clone's git hooks in every worktree, a new one included.
 
 | Command | Purpose |
 | --- | --- |
@@ -49,7 +49,7 @@ Change only the files the task needs, and stage paths by name. Run `bazelisk tes
 
 Write each Markdown paragraph on one line. `rumdl`, Vale and cspell check the Markdown and the Go comments, so keep the prose plain.
 
-Commit messages follow Conventional Commits, as `cog.toml` configures. `cog` writes `CHANGELOG.md` from them. The hooks under `tools/interim/` stamp the attribution trailers and guard the `gh pr` commands, so don't edit those scripts.
+Commit messages follow Conventional Commits, as `cog.toml` configures. `cog` writes `CHANGELOG.md` from them. The `tbhbdev alpha` hooks stamp the attribution trailers and guard the `gh pr` commands. `mise run pr`, `mise run merge` and the stamp-docs hook still run the scripts under `tools/interim/`, so don't edit those scripts.
 
 ## Identities
 

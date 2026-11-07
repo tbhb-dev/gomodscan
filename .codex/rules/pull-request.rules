@@ -4,8 +4,8 @@
 # Agents open, edit and merge pull requests through the interim PR scripts
 # (`mise run pr`, `mise run merge`), never with gh directly. The scripts call
 # gh themselves; these rules only see commands the agent types. They back up
-# tools/interim/guard_gh_pr.py, the PreToolUse hook that blocks the same calls
-# and hints at the right command; the rule catches what the hook misses.
+# the `tbhbdev alpha` PreToolUse hook that blocks the same calls and hints at
+# the right command; the rule catches what the hook misses.
 prefix_rule(
     pattern = ["gh", "pr", ["create", "edit", "merge"]],
     decision = "forbidden",
