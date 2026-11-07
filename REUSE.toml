@@ -18,7 +18,6 @@ path = [
   "go.sum",
   "mise.lock",
   "MODULE.bazel.lock",
-  "uv.lock",
   ".mise/locks/**",
 ]
 SPDX-FileCopyrightText = "Tony Burns"
@@ -29,7 +28,6 @@ SPDX-License-Identifier = "Apache-2.0"
 [[annotations]]
 path = [
   ".bazelversion",
-  ".python-version",
   ".bazelignore",
   ".rylignore",
   ".cspell-words.txt",

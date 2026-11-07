@@ -14,8 +14,7 @@
     "mise.lock",
     "**/testdata/**/*",
     "tmp/**/*",
-    "tools/testdata/**/*",
-    "uv.lock"
+    "tools/testdata/**/*"
   ],
   "dictionaryDefinitions": [
     {

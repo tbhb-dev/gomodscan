@@ -11,21 +11,10 @@
 #   mise lock --platform linux-x64,linux-arm64,macos-arm64
 lockfile = true
 
-# uv owns the Python interpreters. Without this, mise reads .python-version
-# too (the default allowlist is ["node", "python"]) and installs its own
-# python, which uv then finds on PATH: the same interpreter with two owners.
-idiomatic_version_file_enable_tools = []
-
 [env]
-# Finish the arrangement the setting above sets up: mise leaves the
-# interpreter to uv, and this makes uv provision it rather than settle for a
-# system build it happened to find, which would differ by machine unnoticed.
-UV_PYTHON_PREFERENCE = "only-managed"
 # The Bazel-pinned tools (`bazel run //:bazel_env` builds the shims), so a
 # shell or task under mise runs the same versions the gates do.
 _.path = [".bazel_env/bin"]
 
 [tools]
 bazelisk = "1.30.0"
-# Syncs the Python dev tools in pyproject.toml, such as prek.
-uv = "0.13.6"
