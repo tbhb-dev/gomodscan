@@ -10,7 +10,7 @@ bazel_dep(name = "gazelle", version = "0.54.0")
 
 # Shared lint, format and test rules, with default tool pins. Not on the BCR
 # yet, so it comes from Git, pinned to a commit on the rules repository's main
-# branch. All three tbhb_rules* modules move together. Local development
+# branch. Both tbhb_rules* modules move together. Local development
 # points at a clone instead, with
 # `common --override_module=tbhb_rules=../rules` in .bazelrc.user.
 bazel_dep(name = "tbhb_rules", version = "0.0.0", dev_dependency = True)
@@ -18,17 +18,6 @@ git_override(
     module_name = "tbhb_rules",
     commit = "6c4ec7bf56f52b316557b7c7dec53b30b6ffbbe6",
     remote = "https://github.com/tbhb-dev/rules.git",
-)
-
-# The Python checks, a nested module of the same repository, built from
-# uv.lock. Same pin as tbhb_rules; locally,
-# `common --override_module=tbhb_rules_python=../rules/python`.
-bazel_dep(name = "tbhb_rules_python", version = "0.0.0", dev_dependency = True)
-git_override(
-    module_name = "tbhb_rules_python",
-    commit = "6c4ec7bf56f52b316557b7c7dec53b30b6ffbbe6",
-    remote = "https://github.com/tbhb-dev/rules.git",
-    strip_prefix = "python",
 )
 
 # The Go checks (golangci-lint, deadcode, go-arch-lint, go mod tidy and the
@@ -43,16 +32,11 @@ git_override(
     strip_prefix = "go",
 )
 
-# The Python environment: the interpreter .python-version names and every
-# package uv.lock pins, as `uv sync` gives a checkout.
-python = use_extension("@tbhb_rules_python//:extensions.bzl", "python", dev_dependency = True)
-python.project()
-
 # Dev dependencies: tooling that only this workspace needs.
 bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)
 bazel_dep(name = "bazelrc-preset.bzl", version = "1.10.0", dev_dependency = True)
 
-# The OS constraints that keep the interim tooling's tests off Windows, and
+# The OS constraints that keep mutation testing and bazel_env off Windows, and
 # native_test for the Windows workspace status script's test.
 bazel_dep(name = "bazel_skylib", version = "1.9.2", dev_dependency = True)
 bazel_dep(name = "platforms", version = "1.1.0", dev_dependency = True)
@@ -104,20 +88,7 @@ go_mod_proxy.from_file(
 )
 use_repo(go_mod_proxy, "go_mod_proxy")
 
-# Pinned copies of the SchemaStore schemas that pyproject.toml's embedded
-# tombi schema refers to by URL, so //:tombi_test validates offline. Pinned
-# to a SchemaStore commit, because www.schemastore.org serves whatever is
-# current and its digests drift.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
-_SCHEMASTORE = "https://raw.githubusercontent.com/SchemaStore/schemastore/f0e072bb85076fcae82bebf058cf86520d4ea450/src/schemas/json/"
-
-http_file(
-    name = "schemastore_uv",
-    dev_dependency = True,
-    sha256 = "accd72042015703861297d12c682e0d9c35f435506acf942874927bb367ccdf7",
-    url = _SCHEMASTORE + "uv.json",
-)
 
 # Vale style packages, one per `Packages` URL in .vale.ini and in the same
 # order, pinned by digest. //:vale_test syncs from these instead of the

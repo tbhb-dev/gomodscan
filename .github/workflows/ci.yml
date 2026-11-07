@@ -68,7 +68,7 @@ jobs:
       # //... is every hermetic gate: the whole-tree lint tests (secrets in
       # the working tree, YAML, TOML, Markdown, prose, EditorConfig,
       # workflows, shell, CODEOWNERS paths), the format check, Starlark
-      # lint, nogo during the build, the Go and Python tests and linters,
+      # lint, nogo during the build, the Go tests and linters,
       # condition coverage, the docs bundle and REUSE checks, the import
       # contracts, and the preset staleness test.
       - name: Test
@@ -95,7 +95,7 @@ jobs:
 
   # The repository-level checks, in the shared workflow, on Linux beside the
   # bazel matrix so they don't wait behind the tests: gazelle, MODULE.bazel
-  # tidiness, the history scan, the Python audit, govulncheck (the `bazel run`
+  # tidiness, the history scan, govulncheck (the `bazel run`
   # target, whose SARIF is kept as an artifact), zizmor online and CODEOWNERS.
   repo:
     name: repo
@@ -106,6 +106,7 @@ jobs:
       gazelle-dirs: .
       govulncheck-target: //:govulncheck
       module-dirs: .
+      pip-audit-target: ""
 
   # gomodscan scans its own vendored modules, built from source so the scan
   # exercises the code under review. The repository does not vendor, so a

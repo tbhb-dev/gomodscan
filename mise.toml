@@ -3,7 +3,7 @@
 # Copyright Tony Burns
 
 # Tool bootstrap only. Bazel pins and runs every gate (`bazelisk test //...`,
-# the same command CI runs). The only tasks are the interim PR scripts.
+# the same command CI runs). It defines no tasks.
 
 [settings]
 # Record resolved versions, URLs, and digests in mise.lock (committed).
@@ -11,33 +11,12 @@
 #   mise lock --platform linux-x64,linux-arm64,macos-arm64
 lockfile = true
 
-# uv owns the Python interpreters. Without this, mise reads .python-version
-# too (the default allowlist is ["node", "python"]) and installs its own
-# python, which uv then finds on PATH: the same interpreter with two owners.
-idiomatic_version_file_enable_tools = []
-
 [env]
-# Finish the arrangement the setting above sets up: mise leaves the
-# interpreter to uv, and this makes uv provision it rather than settle for a
-# system build it happened to find, which would differ by machine unnoticed.
-UV_PYTHON_PREFERENCE = "only-managed"
 # The Bazel-pinned tools (`bazel run //:bazel_env` builds the shims), so a
 # shell or task under mise runs the same versions the gates do.
 _.path = [".bazel_env/bin"]
 
 [tools]
 bazelisk = "1.30.0"
-# Runs the interim attribution hooks and the interim PR script (uv run).
-uv = "0.13.6"
-
-# Interim until the real PR tooling lands; see tools/interim/pull_request.py.
-# Usage: mise run pr -- check | create [--dry-run] | edit --pr N
-[tasks.pr]
-description = "Check a PR draft and open or update the PR from it (interim)"
-run = "uv run python -m tools.interim.pull_request"
-
-# Interim until the real PR tooling lands; see tools/interim/squash_merge.py.
-# Usage: mise run merge -- PR [--dry-run].
-[tasks.merge]
-description = "Squash-merge an approved PR with a plain-text commit message (interim)"
-run = "uv run python -m tools.interim.squash_merge"
+# Runs the git hooks that `tbhbdev alpha install` installs.
+prek = "0.5.9"

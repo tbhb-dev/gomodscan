@@ -3,7 +3,7 @@
 
 # The section scheme of a pull request description: the one source of truth
 # for which H2 sections exist, their order, which are required, and their
-# word limits. tools/interim/pull_request.py reads it, and a test checks that
+# word limits. `tbhbdev alpha pr` reads it, and a test checks that
 # the guidance comments in PULL_REQUEST_TEMPLATE.md state the same numbers.
 # A limit counts prose words only: fenced code, inline code, link URLs, and
 # HTML comments are free.

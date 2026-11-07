@@ -12,11 +12,11 @@ The Go module path is `go.tbhb.dev/gomodscan`. Exit status 0 means every module 
 
 Tests read their inputs from `testdata/` directories. The `vendormod` fixture `testdata/self` mirrors what `go mod vendor` writes for this module, and a test compares it with the requirements in `go.mod`. A dependency bump has to update that fixture.
 
-`tools/` holds the workspace status script that stamps the version, the lint package, and the interim git hooks. `docs/` is an OKF bundle with its own rules in `docs/AGENTS.md`. `.github/` holds the workflows, the CODEOWNERS file, and the repository rulesets.
+`tools/` holds the lint package and the workspace status script that stamps the version. `docs/` is an OKF bundle with its own rules in `docs/AGENTS.md`. `.github/` holds the workflows, the CODEOWNERS file, and the repository rulesets.
 
 ## Commands
 
-Bazel pins every tool and runs every check. The only things [mise](https://mise.jdx.dev) installs are `bazelisk` and `uv`, at the versions `mise.toml` and `mise.lock` pin. A fresh worktree needs `mise install`, then `bazelisk run //:bazel_env` for the tool shims, while `tbhbdev alpha install` runs once per machine for the user-level harness hooks, whose session start hook installs the clone's git hooks in every worktree, a new one included.
+Bazel pins every tool and runs every check. The only things [mise](https://mise.jdx.dev) installs are `bazelisk` and `prek`, which runs the git hooks, at the versions `mise.toml` and `mise.lock` pin. A fresh worktree needs `mise install`, then `bazelisk run //:bazel_env` for the tool shims, while `tbhbdev alpha install` runs once per machine for the user-level harness hooks, whose session start hook installs the clone's git hooks in every worktree, a new one included.
 
 | Command | Purpose |
 | --- | --- |
@@ -49,7 +49,7 @@ Change only the files the task needs, and stage paths by name. Run `bazelisk tes
 
 Write each Markdown paragraph on one line. `rumdl`, Vale and cspell check the Markdown and the Go comments, so keep the prose plain.
 
-Commit messages follow Conventional Commits, as `cog.toml` configures. `cog` writes `CHANGELOG.md` from them. The `tbhbdev alpha` hooks stamp the attribution trailers and guard the `gh pr` commands. `mise run pr`, `mise run merge` and the stamp-docs hook still run the scripts under `tools/interim/`, so don't edit those scripts.
+Commit messages follow Conventional Commits, as `cog.toml` configures. `cog` writes `CHANGELOG.md` from them. The `tbhbdev alpha` hooks stamp the attribution trailers and guard the `gh pr` commands. Open and merge pull requests with `tbhbdev alpha pr` and `tbhbdev alpha merge`. The stamp-docs hook runs `tbhbdev alpha identity stamp-docs`.
 
 ## Identities
 

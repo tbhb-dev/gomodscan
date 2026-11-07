@@ -3,12 +3,6 @@
 
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@tbhb_rules//repo:defs.bzl", "repo_files")
-load(
-    "@tbhb_rules_python//:defs.bzl",
-    "pip_audit",
-    "pip_audit_test",
-    "python_tool",
-)
 
 repo_files()
 
@@ -21,28 +15,3 @@ native_test(
     data = ["get_workspace_status.bat"],
     target_compatible_with = ["@platforms//os:windows"],
 )
-
-# Advisories change without any input changing, so the audit is a `bazel
-# run` target (CI runs it), plus a manual network test.
-pip_audit(
-    name = "pip_audit",
-)
-
-pip_audit_test(
-    name = "pip_audit_test",
-    srcs = ["//:repo_files"],
-)
-
-# The locked Python tools as executables, for //:bazel_env's shims (git
-# hooks and editors). Each runs from the current directory.
-[
-    python_tool(
-        name = tool,
-        tool = tool,
-        visibility = ["//:__pkg__"],
-    )
-    for tool in [
-        "python",
-        "uv",
-    ]
-]

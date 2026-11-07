@@ -10,10 +10,9 @@
     "github>tbhb-dev/renovate-config//default.json5#a475723d9575aa4300f46570c7a9faf0092a252b", // main
     "github>tbhb-dev/renovate-config//bazel.json5#a475723d9575aa4300f46570c7a9faf0092a252b", // main
     "github>tbhb-dev/renovate-config//go.json5#a475723d9575aa4300f46570c7a9faf0092a252b", // main
-    "github>tbhb-dev/renovate-config//python.json5#a475723d9575aa4300f46570c7a9faf0092a252b", // main
   ],
 
-  // The Go module, Bazel pins and uv lock are covered by the presets. The one
+  // The Go module and Bazel pins are covered by the presets. The one
   // addition is a rule that stops Renovate from changing the go directive in
   // go.mod. A person raises it by hand, and Bazel's go_sdk follows it, so the
   // directive sets the Go release the build uses.

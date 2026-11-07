@@ -343,15 +343,10 @@ ryl_test(
     data = [".rylignore"],
 )
 
-# pyproject.toml's embedded schema refers to these by URL; tombi runs
-# offline, so it reads the pinned copies from MODULE.bazel.
 tombi_test(
     name = "tombi_test",
     srcs = [":repo_files"],
     config = "tombi.toml",
-    schemas = {
-        "https://www.schemastore.org/uv.json": "@schemastore_uv//file",
-    },
 )
 
 rumdl_test(
@@ -491,13 +486,11 @@ bazel_env(
         "git": "@tbhb_rules_git//:git",
         "gitleaks": "@tbhb_rules_gitleaks//:gitleaks",
         "go": "@rules_go//go",
-        "python": "//tools:python",
         "rumdl": "@tbhb_rules_rumdl//:rumdl",
         "ryl": "@tbhb_rules_ryl//:ryl",
         "shellcheck": "@tbhb_rules_shellcheck//:shellcheck",
         "shfmt": "@tbhb_rules_shfmt//:shfmt",
         "tombi": "@tbhb_rules_tombi//:tombi",
-        "uv": "//tools:uv",
         "vale": "@tbhb_rules_vale//:vale",
         "zizmor": "@tbhb_rules_zizmor//:zizmor",
     },
