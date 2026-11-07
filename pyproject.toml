@@ -21,7 +21,7 @@ dev = [
   "pyyaml>=6.0.3",
   # tbhb_rules_python's pip_audit reads the audit set from uv.lock.
   "pip-audit>=2.10.1",
-  # The git hook runner install.sh wires up.
+  # Runs the git hooks that `tbhbdev alpha install` installs.
   "prek==0.5.9",
 ]
 
