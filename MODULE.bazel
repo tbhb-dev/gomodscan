@@ -10,7 +10,7 @@ bazel_dep(name = "gazelle", version = "0.54.0")
 
 # Shared lint, format and test rules, with default tool pins. Not on the BCR
 # yet, so it comes from Git, pinned to a commit on the rules repository's main
-# branch. All three tbhb_rules* modules move together. Local development
+# branch. Both tbhb_rules* modules move together. Local development
 # points at a clone instead, with
 # `common --override_module=tbhb_rules=../rules` in .bazelrc.user.
 bazel_dep(name = "tbhb_rules", version = "0.0.0", dev_dependency = True)

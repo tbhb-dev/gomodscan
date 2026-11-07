@@ -93,11 +93,11 @@ repos:
         entry: .bazel_env/bin/editorconfig-checker -config .editorconfig-checker.json
 
   # Agent identity, from `tbhbdev alpha identity`. Only stamp-docs runs under
-  # prek: `tbhbdev alpha install`
-  # installs the trailer, check and consume hooks (prepare-commit-msg,
-  # commit-msg, post-commit) as plain git hooks, because prek stashes unstaged
-  # changes around every stage and fails a hook when the work tree changes
-  # while it runs, which a concurrent agent's edit does.
+  # prek: `tbhbdev alpha install` installs the trailer, check and consume
+  # hooks (prepare-commit-msg, commit-msg, post-commit) as plain git hooks,
+  # because prek stashes unstaged changes around every stage and fails a hook
+  # when the work tree changes while it runs, which a concurrent agent's edit
+  # does.
   #
   # stamp-docs rewrites the staged blob and the work-tree file together, so
   # prek's modified-files check passes. With unstaged edits next to the
