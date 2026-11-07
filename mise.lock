@@ -13,19 +13,7 @@ checksum_source = "mise-versions"
 url = "https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-arm64"
 url_api = "https://api.github.com/repos/bazelbuild/bazelisk/releases/assets/660754381"
 
-[tools.bazelisk."platforms.linux-arm64-musl"]
-checksum = "sha256:b2bcc040c213b44586b121bda6d983c35df121b917c3a7a66fb16f2fa0df1a4f"
-checksum_source = "mise-versions"
-url = "https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-arm64"
-url_api = "https://api.github.com/repos/bazelbuild/bazelisk/releases/assets/660754381"
-
 [tools.bazelisk."platforms.linux-x64"]
-checksum = "sha256:a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8"
-checksum_source = "mise-versions"
-url = "https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-amd64"
-url_api = "https://api.github.com/repos/bazelbuild/bazelisk/releases/assets/660754143"
-
-[tools.bazelisk."platforms.linux-x64-musl"]
 checksum = "sha256:a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8"
 checksum_source = "mise-versions"
 url = "https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-amd64"
@@ -36,18 +24,6 @@ checksum = "sha256:555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d562579
 checksum_source = "mise-versions"
 url = "https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-darwin-arm64"
 url_api = "https://api.github.com/repos/bazelbuild/bazelisk/releases/assets/660754005"
-
-[tools.bazelisk."platforms.macos-x64"]
-checksum = "sha256:a0e6468b0c6b812f782d8cbfb05824121f6980c0bd70aaa1774fb8272bb7b2ad"
-checksum_source = "mise-versions"
-url = "https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-darwin-amd64"
-url_api = "https://api.github.com/repos/bazelbuild/bazelisk/releases/assets/660753873"
-
-[tools.bazelisk."platforms.windows-x64"]
-checksum = "sha256:5d14a31e9d8a363c48ba1900dbd56764d730835232eb0d113cce255856ffe3ef"
-checksum_source = "mise-versions"
-url = "https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-windows-amd64.exe"
-url_api = "https://api.github.com/repos/bazelbuild/bazelisk/releases/assets/660754731"
 
 [[tools.prek]]
 version = "0.5.9"

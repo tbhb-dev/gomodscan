@@ -6,10 +6,19 @@
 # the same command CI runs). It defines no tasks.
 
 [settings]
-# Record resolved versions, URLs, and digests in mise.lock (committed).
-# Refresh every platform CI or development runs with:
+# Record resolved versions, URLs, and digests in mise.lock (committed), for
+# exactly the platforms mise runs on: linux-x64, linux-arm64, macos-arm64.
+# CI never runs mise; Bazel provides every gate's tools. Refresh with:
 #   mise lock --platform linux-x64,linux-arm64,macos-arm64
+# `mise lock --platform` only adds platforms. To drop one, delete mise.lock
+# first.
 lockfile = true
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64"]
+# Never write mise.lock as a side effect. `mise install` and `mise upgrade`
+# read the lock and fail on a pin, or a platform, it doesn't cover.
+# `mise lock` (above, or Renovate's `mise lock <tool>` after a pin bump) is
+# the only writer.
+locked = true
 
 [env]
 # The Bazel-pinned tools (`bazel run //:bazel_env` builds the shims), so a
