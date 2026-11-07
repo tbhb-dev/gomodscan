@@ -3,7 +3,7 @@
 # Copyright Tony Burns
 
 # Tool bootstrap only. Bazel pins and runs every gate (`bazelisk test //...`,
-# the same command CI runs). The only tasks are the interim PR scripts.
+# the same command CI runs). It defines no tasks.
 
 [settings]
 # Record resolved versions, URLs, and digests in mise.lock (committed).
@@ -27,17 +27,5 @@ _.path = [".bazel_env/bin"]
 
 [tools]
 bazelisk = "1.30.0"
-# Runs the interim attribution hooks and the interim PR script (uv run).
+# Syncs the Python dev tools in pyproject.toml, such as prek.
 uv = "0.13.6"
-
-# Interim until the real PR tooling lands; see tools/interim/pull_request.py.
-# Usage: mise run pr -- check | create [--dry-run] | edit --pr N
-[tasks.pr]
-description = "Check a PR draft and open or update the PR from it (interim)"
-run = "uv run python -m tools.interim.pull_request"
-
-# Interim until the real PR tooling lands; see tools/interim/squash_merge.py.
-# Usage: mise run merge -- PR [--dry-run].
-[tasks.merge]
-description = "Squash-merge an approved PR with a plain-text commit message (interim)"
-run = "uv run python -m tools.interim.squash_merge"

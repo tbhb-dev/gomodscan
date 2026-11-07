@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Tony Burns
 
-# Repo-level Python toolchain. This repository is primarily Go; the Python
-# here is the interim agent tooling under tools/interim, and this file pins
-# what those scripts need at runtime. `package = false` keeps the root virtual: uv syncs the
+# Repo-level Python toolchain. This repository is primarily Go; this file
+# pins the Python development tools. `package = false` keeps the root virtual: uv syncs the
 # dependency groups into .venv without trying to build the root.
 [project]
 name = "gomodscan-workspace"
@@ -15,10 +14,6 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-  # tools/interim/pull_request.py validates PR drafts against the JSON
-  # Schema in .github/schemas and reads the YAML front matter.
-  "jsonschema[format]>=4.26.0",
-  "pyyaml>=6.0.3",
   # tbhb_rules_python's pip_audit reads the audit set from uv.lock.
   "pip-audit>=2.10.1",
   # Runs the git hooks that `tbhbdev alpha install` installs.

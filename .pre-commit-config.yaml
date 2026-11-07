@@ -92,9 +92,8 @@ repos:
         language: system
         entry: .bazel_env/bin/editorconfig-checker -config .editorconfig-checker.json
 
-  # Interim agent identity (replaced by `ascm git-hook` at M1). The module
-  # needs Python 3.15, and the python3 on PATH may be older, so it runs
-  # through uv. Only stamp-docs runs under prek: `tbhbdev alpha install`
+  # Agent identity, from `tbhbdev alpha identity`. Only stamp-docs runs under
+  # prek: `tbhbdev alpha install`
   # installs the trailer, check and consume hooks (prepare-commit-msg,
   # commit-msg, post-commit) as plain git hooks, because prek stashes unstaged
   # changes around every stage and fails a hook when the work tree changes
@@ -109,7 +108,7 @@ repos:
       - id: agent-identity-stamp-docs
         name: agent identity stamp docs
         language: system
-        entry: uv run --no-project --quiet --python ">=3.15" python tools/interim/agent_identity.py stamp-docs
+        entry: tbhbdev alpha identity stamp-docs
         stages: [pre-commit]
         types: [markdown]
         pass_filenames: false

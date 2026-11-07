@@ -52,7 +52,7 @@ python.project()
 bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)
 bazel_dep(name = "bazelrc-preset.bzl", version = "1.10.0", dev_dependency = True)
 
-# The OS constraints that keep the interim tooling's tests off Windows, and
+# The OS constraints that keep mutation testing and bazel_env off Windows, and
 # native_test for the Windows workspace status script's test.
 bazel_dep(name = "bazel_skylib", version = "1.9.2", dev_dependency = True)
 bazel_dep(name = "platforms", version = "1.1.0", dev_dependency = True)
