@@ -16,7 +16,7 @@ Tests read their inputs from `testdata/` directories. The `vendormod` fixture `t
 
 ## Commands
 
-Bazel pins every tool and runs every check. The only things [mise](https://mise.jdx.dev) installs are `bazelisk` and `uv`, at the versions `mise.toml` and `mise.lock` pin. A fresh worktree needs `mise install`, then `bazelisk run //:bazel_env` to build the tool shims, then `tbhbdev alpha install` once per clone to install the git hooks that call the shims, along with the user-level harness hooks that reinstall them in each new worktree.
+Bazel pins every tool and runs every check. The only things [mise](https://mise.jdx.dev) installs are `bazelisk` and `uv`, at the versions `mise.toml` and `mise.lock` pin. A fresh worktree needs `mise install`, then `bazelisk run //:bazel_env` for the tool shims, while `tbhbdev alpha install` runs once per machine for the user-level harness hooks, whose session start hook installs the clone's git hooks in every worktree, a new one included.
 
 | Command | Purpose |
 | --- | --- |
