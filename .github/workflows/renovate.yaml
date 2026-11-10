@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   renovate:
-    uses: tbhb-dev/renovate-config/.github/workflows/renovate.yaml@3eb2fe5fd73379fe0c7a9c432398de449e387e90  # main
+    uses: tbhb-dev/renovate-config/.github/workflows/renovate.yaml@dfce0dd9b70d0be6dc826a78b38938f90930f206  # main
     with:
       # Scheduled runs are real runs; manual runs default to a dry run.
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
