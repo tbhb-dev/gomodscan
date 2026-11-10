@@ -60,7 +60,7 @@ jobs:
       # Hardens the runner, sets up Bazel and fetches, with the platform
       # workarounds, from tbhb-dev/rules.
       - name: Set up Bazel for CI
-        uses: tbhb-dev/rules/.github/actions/setup-bazel-ci@f7f4c1f893f9dad8975f5cd2b1bbb24819604c12  # main
+        uses: tbhb-dev/rules/.github/actions/setup-bazel-ci@ae7b1f5e72f8965f81c27d53b75d27296f17543b  # main
         with:
           disk-cache: ${{ github.workflow }}-${{ matrix.os }}
           cache-save: ${{ github.event_name != 'pull_request' }}
@@ -101,7 +101,7 @@ jobs:
     name: repo
     permissions:
       contents: read
-    uses: tbhb-dev/rules/.github/workflows/repo-checks.yml@f7f4c1f893f9dad8975f5cd2b1bbb24819604c12  # main
+    uses: tbhb-dev/rules/.github/workflows/repo-checks.yml@ae7b1f5e72f8965f81c27d53b75d27296f17543b  # main
     with:
       gazelle-dirs: .
       govulncheck-target: //:govulncheck
@@ -126,7 +126,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Bazel for CI
-        uses: tbhb-dev/rules/.github/actions/setup-bazel-ci@f7f4c1f893f9dad8975f5cd2b1bbb24819604c12  # main
+        uses: tbhb-dev/rules/.github/actions/setup-bazel-ci@ae7b1f5e72f8965f81c27d53b75d27296f17543b  # main
         with:
           targets: //cmd/gomodscan @rules_go//go
 
@@ -165,6 +165,6 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Fail if any needed job did not succeed
-        uses: tbhb-dev/rules/.github/actions/ci-conclusion@f7f4c1f893f9dad8975f5cd2b1bbb24819604c12  # main
+        uses: tbhb-dev/rules/.github/actions/ci-conclusion@ae7b1f5e72f8965f81c27d53b75d27296f17543b  # main
         with:
           needs: ${{ toJSON(needs) }}
