@@ -1,6 +1,6 @@
 module go.tbhb.dev/gomodscan
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/failsafe-go/failsafe-go v0.9.8
