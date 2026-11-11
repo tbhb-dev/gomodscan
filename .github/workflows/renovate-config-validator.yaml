@@ -10,7 +10,10 @@ on:
   pull_request:
     paths:
       - ".github/renovate.json5"
-      - ".github/workflows/renovate-config-validator.yaml"
+      - ".github/workflows/*.yaml"
+      - ".github/workflows/*.yml"
+      - "MODULE.bazel"
+      - "**/*.bzl"
 
 permissions:
   contents: read
