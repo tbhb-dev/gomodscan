@@ -7,9 +7,9 @@
   // The presets track tbhb-dev/renovate-config's main branch, pinned by
   // commit; Renovate bumps the pins (the "renovate-config" group).
   extends: [
-    "github>tbhb-dev/renovate-config//default.json5#5abdcea8af69138ab567e12bdbb291f44c41d8e7", // main
-    "github>tbhb-dev/renovate-config//bazel.json5#5abdcea8af69138ab567e12bdbb291f44c41d8e7", // main
-    "github>tbhb-dev/renovate-config//go.json5#5abdcea8af69138ab567e12bdbb291f44c41d8e7", // main
+    "github>tbhb-dev/renovate-config//default.json5#a4217a7c162ed39216b343f85e48f712665a93a8", // main
+    "github>tbhb-dev/renovate-config//bazel.json5#a4217a7c162ed39216b343f85e48f712665a93a8", // main
+    "github>tbhb-dev/renovate-config//go.json5#a4217a7c162ed39216b343f85e48f712665a93a8", // main
   ],
 
   // The Go module and Bazel pins are covered by the presets. The one
