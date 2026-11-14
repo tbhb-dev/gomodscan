@@ -28,7 +28,7 @@ register_toolchains(
 bazel_dep(name = "tbhb_rules", version = "0.0.0", dev_dependency = True)
 git_override(
     module_name = "tbhb_rules",
-    commit = "c90ce38c84b6a00fa0f61888799499f32f22f9d4",
+    commit = "ee2995544501ca1baa6f2d091541b759b9ce55ea",
     remote = "https://github.com/tbhb-dev/rules.git",
 )
 
@@ -39,7 +39,7 @@ git_override(
 bazel_dep(name = "tbhb_rules_go", version = "0.0.0", dev_dependency = True)
 git_override(
     module_name = "tbhb_rules_go",
-    commit = "c90ce38c84b6a00fa0f61888799499f32f22f9d4",
+    commit = "ee2995544501ca1baa6f2d091541b759b9ce55ea",
     remote = "https://github.com/tbhb-dev/rules.git",
     strip_prefix = "go",
 )
