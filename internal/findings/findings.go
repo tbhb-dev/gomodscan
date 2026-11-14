@@ -18,7 +18,7 @@
 // for deterministic output and with double quotes around any value
 // containing whitespace, an equals sign, or a literal quote.
 //
-// SARIF emission uses [github.com/owenrumney/go-sarif/v3] against
+// SARIF emission uses the go-sarif v3 module against
 // the v2.1.0 schema. Each result from [AddResult] carries a logical
 // location whose Kind field holds the literal string module (the
 // module path) alongside a physical location pointing at the vendor
