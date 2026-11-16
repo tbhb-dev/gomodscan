@@ -77,7 +77,6 @@ use_repo(
     "tbhb_rules_cog",
     "tbhb_rules_editorconfig_checker",
     "tbhb_rules_git",
-    "tbhb_rules_gitleaks",
     "tbhb_rules_rumdl",
     "tbhb_rules_ryl",
     "tbhb_rules_shellcheck",

@@ -484,7 +484,7 @@ bazel_env(
         "cspell": "@tbhb_rules//lint/private/cspell",
         "editorconfig-checker": "@tbhb_rules_editorconfig_checker//:editorconfig-checker",
         "git": "@tbhb_rules_git//:git",
-        "gitleaks": "@tbhb_rules_gitleaks//:gitleaks",
+        "gitleaks": "@tbhb_rules//lint:gitleaks",
         "go": "@rules_go//go",
         "rumdl": "@tbhb_rules_rumdl//:rumdl",
         "ryl": "@tbhb_rules_ryl//:ryl",
