@@ -21,3 +21,13 @@ paths = [
   '''(^|/)__pycache__/''',
   '''^\.(ruff|pytest|hypothesis|rumdl)_cache/''',
 ]
+
+# The vendor tree holds third-party module source that `go mod vendor` copies
+# verbatim. The generic-api-key rule matches identifier names such as
+# amzSignedHeadersKey in it. Each module's own review covers its content, and
+# the vendor fixtures under internal/ stay scanned.
+[[allowlists]]
+description = "Vendored third-party module source"
+paths = [
+  '''^vendor/''',
+]
