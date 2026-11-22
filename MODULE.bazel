@@ -109,8 +109,8 @@ http_file(
     name = "vale_google",
     dev_dependency = True,
     downloaded_file_path = "Google.zip",
-    sha256 = "4b67fca1f2a88595b2a578ab98bbf3017a23af677b04f93e862843f3ea1a9a0b",
-    url = "https://github.com/errata-ai/Google/releases/download/v0.7.1/Google.zip",
+    sha256 = "c1f61ae1c4cee3f2c2ffb2912fbbdff48a02c0e47e114dfd6435b15438171d97",
+    url = "https://github.com/errata-ai/Google/releases/download/v0.7.2/Google.zip",
 )
 
 http_file(
