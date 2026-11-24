@@ -8,6 +8,10 @@
 name: Renovate
 
 on:
+  push:
+    # A merge to main is when open PRs fall behind; the schedule alone can be
+    # dropped by GitHub for hours.
+    branches: [main]
   schedule:
     # Hourly on weekdays, every two hours on weekends.
     - cron: "27 * * * 1-5"
@@ -31,7 +35,7 @@ jobs:
   renovate:
     uses: tbhb-dev/renovate-config/.github/workflows/renovate.yaml@e1a65634da8cdfd89662af277f258134dfa6cc8c  # main
     with:
-      # Scheduled runs are real runs; manual runs default to a dry run.
+      # Push and schedule runs are real runs; manual runs default to a dry run.
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
       log_level: ${{ github.event_name == 'workflow_dispatch' && inputs.log_level || 'DEBUG' }}
     secrets:
