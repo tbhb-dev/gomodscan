@@ -15,7 +15,7 @@ import (
 // in the init-time logic. The cases pair an ldflags input with a
 // hand-rolled readBuildInfo result and assert the resolved version.
 //
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestResolveVersion(t *testing.T) {
 	t.Parallel()
 

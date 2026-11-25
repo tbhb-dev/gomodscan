@@ -342,7 +342,7 @@ func runVersionsCase(t *testing.T, testCase versionsCase) {
 // token reports the attempt and the 200 of the request that delivered it.
 // Zero values would read as no HTTP response.
 //
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestVersions_StalePageTokenReportsItsRequest(t *testing.T) {
 	t.Parallel()
 
@@ -479,7 +479,7 @@ func TestRetryTransport_RetriesServerErrorThenSucceeds(t *testing.T) {
 	})
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestRetryTransport_ExhaustsRetriesOnPersistentServerError(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -526,7 +526,7 @@ func TestRetryTransport_ReportsLastNetworkError(t *testing.T) {
 	})
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestRetryTransport_DoesNotRetryForbidden(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -608,7 +608,7 @@ func TestRetryTransport_RetriesTooManyRequests(t *testing.T) {
 	}
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestRetryTransport_DoesNotRetryNotFound(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

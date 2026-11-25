@@ -111,7 +111,7 @@ func (t *transport) fresh(req *http.Request, key string) (*http.Response, bool) 
 	}
 
 	ent, err := decode(blob)
-	// gomutants:disable-next-line EXPRESSION_REMOVE reason="a failed decode gives an expired zero entry"
+	// gomutants:disable-next-line EXPRESSION_REMOVE reason="A failed decode gives an expired zero entry."
 	if err != nil || !time.Now().Before(ent.Expires) {
 		return nil, false
 	}

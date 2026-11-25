@@ -71,7 +71,7 @@ type Location struct {
 }
 
 // AddResult records one finding on run. The logical location uses
-// the "module" kind with module@version as both the name and the
+// the module kind with module@version as both the name and the
 // fully qualified name. The supplied Location becomes the physical
 // location Code Scanning requires, mapping URI onto
 // artifactLocation.uri and Line onto region.startLine so the finding

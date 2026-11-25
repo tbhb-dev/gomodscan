@@ -37,8 +37,8 @@
 // exit status. The JSON object, at schema 1, carries the build version, the
 // modules, findings, and unevaluated counts, an errors array, and an error
 // field. Each errors entry records one registry lookup that still failed after
-// the retries: the module path and version, the lookup ("versions" for
-// pkg.go.dev or "vulns" for OSV), the error message, the attempts, and the
+// the retries: the module path and version, the lookup (versions for
+// pkg.go.dev or vulns for OSV), the error message, the attempts, and the
 // last HTTP status, which reads 0 when the final attempt ended without a
 // response. The attempts count only requests this run sent, so a lookup that
 // failed on a pkg.go.dev response from the on-disk cache records 0 attempts
@@ -382,7 +382,7 @@ func realMain(args []string, out, errOut io.Writer) int {
 		out,
 		errOut,
 	)
-	// gomutants:disable-next-line BRANCH_IF reason="run pairs every error with ToolFailure"
+	// gomutants:disable-next-line BRANCH_IF reason="Every error from run has status ToolFailure."
 	if err != nil {
 		// run has already logged the cause, ahead of any summary-write error,
 		// and returned the tool-failure code.
