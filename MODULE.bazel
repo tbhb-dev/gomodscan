@@ -117,8 +117,8 @@ http_file(
     name = "vale_write_good",
     dev_dependency = True,
     downloaded_file_path = "write-good.zip",
-    sha256 = "2960ef10861ddc7dc76292a4967eb3789bf05ca24f862042f6d15f53332887f0",
-    url = "https://github.com/errata-ai/write-good/releases/download/v0.4.1/write-good.zip",
+    sha256 = "1736c0b61aed16170d5af65f602d776a06dc1a563bc6552abfe5db6940190e22",
+    url = "https://github.com/errata-ai/write-good/releases/download/v0.5.0/write-good.zip",
 )
 
 http_file(
