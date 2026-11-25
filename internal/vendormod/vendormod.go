@@ -71,7 +71,7 @@ func Read(modroot string) ([]Module, error) {
 // Parse reads the well-defined vendor/modules.txt format described
 // in the [Go vendoring reference]. Lines that begin with "# "
 // declare a module and its version, optionally followed by a
-// replace directive ("=> path" or "=> path version"). A line with two leading
+// replace directive ('=> path' or '=> path version'). A line with two leading
 // hashes ("## ") flags sub-metadata that the parser ignores. Every
 // other line lists package paths inside the most recent module
 // and doesn't affect enumeration.

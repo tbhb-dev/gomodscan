@@ -120,7 +120,7 @@ func TestNewTransport_RetriesServerErrorThenSucceeds(t *testing.T) {
 // status switches downstream rely on this to map the status onto their own
 // errors.
 //
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestNewTransport_ExhaustsRetriesReturnsFinalResponse(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -242,7 +242,7 @@ func TestNewTransport_DoesNotRetryTerminalStatus(t *testing.T) {
 // between the four attempts, 7 s in all, give or take the 25% jitter on each
 // step.
 //
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestNewTransport_BacksOffExponentially(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -264,7 +264,7 @@ func TestNewTransport_BacksOffExponentially(t *testing.T) {
 	})
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestWithAttempts_CountsEveryAttempt(t *testing.T) {
 	t.Parallel()
 

@@ -51,7 +51,7 @@ func TestWriteText_SortsManyKeysOnEveryRun(t *testing.T) {
 	}
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestWriteText(t *testing.T) {
 	t.Parallel()
 
@@ -144,7 +144,7 @@ func TestWriteText(t *testing.T) {
 	}
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestWriteSARIF_EmitsValidV210Report(t *testing.T) {
 	t.Parallel()
 
@@ -244,7 +244,7 @@ func TestWriteSARIF_EmptyRunStillValid(t *testing.T) {
 // goldenRun builds the run behind testdata/report.sarif. It has two rules
 // with one result each, in the order the scanner reports them.
 //
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func goldenRun() *sarif.Run {
 	run := findings.NewRun(toolName)
 	run.AddRule("retracted").WithDescription("Module is retracted at the pinned version")

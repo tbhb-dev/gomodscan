@@ -215,7 +215,7 @@ func TestTransport_DoesNotCacheNoStore(t *testing.T) {
 	assert.Zero(t, store.len(), "no-store must never write an entry")
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_DoesNotCacheWithoutDirectives(t *testing.T) {
 	t.Parallel()
 
@@ -237,7 +237,7 @@ type garbageStore struct{ puts atomic.Int32 }
 func (g *garbageStore) Get(string) ([]byte, bool) { return []byte("not a valid gob stream"), true }
 func (g *garbageStore) Put(string, []byte)        { g.puts.Add(1) }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_CorruptEntryDegradesToMiss(t *testing.T) {
 	t.Parallel()
 
@@ -253,7 +253,7 @@ func TestTransport_CorruptEntryDegradesToMiss(t *testing.T) {
 	assert.Equal(t, int32(1), store.puts.Load(), "the fresh response replaces the corrupt entry")
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_PassesThroughNonGET(t *testing.T) {
 	t.Parallel()
 
@@ -269,7 +269,7 @@ func TestTransport_PassesThroughNonGET(t *testing.T) {
 	assert.Zero(t, store.len())
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_HonorsAgeHeader(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -465,7 +465,7 @@ func TestDefaultDir_ErrorsWithoutHome(t *testing.T) {
 	require.Error(t, errors.Unwrap(err), "the os.UserCacheDir failure stays in the error chain")
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_DoesNotCacheMaxAgeZero(t *testing.T) {
 	t.Parallel()
 
@@ -480,7 +480,7 @@ func TestTransport_DoesNotCacheMaxAgeZero(t *testing.T) {
 	assert.Zero(t, store.len())
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_NoStoreOverridesMaxAge(t *testing.T) {
 	t.Parallel()
 
@@ -495,7 +495,7 @@ func TestTransport_NoStoreOverridesMaxAge(t *testing.T) {
 	assert.Zero(t, store.len())
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_IgnoresMalformedMaxAge(t *testing.T) {
 	t.Parallel()
 
@@ -510,7 +510,7 @@ func TestTransport_IgnoresMalformedMaxAge(t *testing.T) {
 	assert.Zero(t, store.len())
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_IgnoresNegativeAge(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -571,7 +571,7 @@ func TestTransport_DoesNotCacheAnythingButA200(t *testing.T) {
 	}
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_CacheControlSkipsEmptyDirectives(t *testing.T) {
 	t.Parallel()
 
@@ -648,7 +648,7 @@ func (h hiddenStore) Get(key string) ([]byte, bool) {
 	return blob, false
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestTransport_TrustsTheStoreMissFlagOverTheBlob(t *testing.T) {
 	t.Parallel()
 

@@ -383,7 +383,7 @@ func TestQuery_RetriesServerErrorThenSucceeds(t *testing.T) {
 	})
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestQuery_ExhaustsRetriesOnPersistentServerError(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -409,7 +409,7 @@ func TestQuery_ExhaustsRetriesOnPersistentServerError(t *testing.T) {
 	})
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestQuery_DoesNotRetryTerminalStatus(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

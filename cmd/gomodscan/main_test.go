@@ -76,7 +76,7 @@ func (f *fakeVulnsClient) Query(_ context.Context, pkg osv.Package, version stri
 	return f.responses[key], nil
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestFindingLevel(t *testing.T) {
 	t.Parallel()
 	assert.Equal(
@@ -629,7 +629,7 @@ func TestCollectDeprecated(t *testing.T) {
 	})
 }
 
-//nolint:dupl // test scenarios repeat the same arrange and assert steps
+//nolint:dupl // test scenarios repeat arrange and assert steps
 func TestCollectMalicious(t *testing.T) {
 	t.Parallel()
 

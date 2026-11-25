@@ -70,7 +70,7 @@ var defaultHTTPClient = &http.Client{
 }
 
 // Package locates one module within an OSV ecosystem. For Go
-// modules, set Ecosystem to "Go" and Name to the module path (such
+// modules, set Ecosystem to Go and Name to the module path (such
 // as the cobra module).
 type Package struct {
 	Name      string `json:"name"`

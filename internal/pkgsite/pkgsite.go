@@ -68,7 +68,7 @@ var ErrUnexpectedStatus = errors.New("unexpected status from pkg.go.dev")
 // treats it as a protocol violation rather than following it, and
 // reports it as a [retryhttp.Error] that records the attempts and the
 // status of the request that delivered the repeated token. When the
-// on-disk cache served that page, the message says "cached response for"
+// on-disk cache served that page, the message says 'cached response for'
 // ahead of the module path, so a fault from the cache doesn't read like a
 // network failure.
 var ErrStalePageToken = errors.New("pkg.go.dev returned a non-advancing nextPageToken")
@@ -113,7 +113,7 @@ type Client struct {
 // page wraps the paginated response structure the API returns. attempts and
 // status record the request that delivered the page. A fault Versions finds
 // in it then reports the same diagnostics a failed request would. source
-// names the module, prefixed with "cached response for" when the on-disk
+// names the module, prefixed with 'cached response for' when the on-disk
 // cache served the page. With that prefix, those faults say where they came
 // from.
 type page struct {
